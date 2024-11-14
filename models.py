@@ -1,4 +1,4 @@
-from torch_geometric.nn import GCNConv, GATConv
+from torch_geometric.nn import GCNConv, GATConv, SAGEConv
 import torch
 
 class GCN(torch.nn.Module):

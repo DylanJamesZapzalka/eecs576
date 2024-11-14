@@ -28,7 +28,8 @@ DATASETS_DIR = constants.DATASETS_DIR
 # Get arguments for experiments
 parser = argparse.ArgumentParser()
 parser.add_argument("--dataset_name", required=True, type=str, help='Dataset used in the experiments. Can be "nq" or "trivia".')
-parser.add_argument("--num_samples", required=True, type=int, help='Number of samples used to train the model.')
+parser.add_argument("--train_num_samples", required=True, type=int, help='Number of samples used to train the model.')
+parser.add_argument("--eval_num_samples", required=True, type=int, help='Number of samples used to evaluate the model.')
 parser.add_argument("--link_type", required=True, type=str, help='Method that will be used to creat the graph. Can be "ssr" or "se".')
 parser.add_argument("--number_of_links", required=True, type=int, help='Number of connections needed to create an edge for the reranking graph.')
 parser.add_argument("--gnn_type", required=True, type=str, help='Type of GNN for the reranker. Can be "gcn", "gat", or "sage".')
@@ -86,12 +87,18 @@ else:
 
 # Get embeddings for each of the questions
 question_embeddings = []
-for question in tqdm(questions_array[0:args.num_samples], desc='Embedding questions'):
+for question in tqdm(questions_array, desc='Embedding questions'):
     question_tokens = q_tokenizer(question ,max_length=512,truncation=True,padding='max_length',return_tensors='pt').to(device)
     question_embedding = q_encoder(**question_tokens)
     question_embedding = question_embedding.pooler_output
     question_embedding = question_embedding.cpu().detach().numpy()
     question_embeddings.append(question_embedding)
+
+train_questions_embeddings = question_embeddings[0:args.train_num_samples]
+eval_questions_embeddings = question_embeddings[args.train_num_samples: args.train_num_samples + args.eval_num_samples]
+
+train_answers_array = answers_array[0:args.train_num_samples]
+eval_answers_array = answers_array[args.train_num_samples: args.train_num_samples + args.eval_num_samples]
 
 # initialize language model
 nlp = spacy.load("en_core_web_sm")
@@ -117,10 +124,10 @@ ce_loss = torch.nn.CrossEntropyLoss()
 
 # Obtain the dataset/dataloader
 data_list = []
-for i in tqdm(range(len(question_embeddings)), desc='Creating dataset'):
+for i in tqdm(range(len(train_questions_embeddings)), desc='Creating dataset'):
     # Get question and answers
-    question_embedding = question_embeddings[i]
-    answers = answers_array[i]
+    question_embedding = train_questions_embeddings[i]
+    answers = train_answers_array[i]
     # Get k nearest examples via DPR
     scores, retrieved_examples = wiki_dataset.get_nearest_examples('embeddings', question_embedding, k=args.num_dpr_samples)
     data= get_data(retrieved_examples, answers, nlp, args.link_type, args.number_of_links, args.num_dpr_samples)
@@ -153,10 +160,10 @@ for i in tqdm(range(args.num_epochs), desc='Training...'):
 # Start the evaluation process
 model.eval()
 accuracy = 0
-for i in tqdm(range(len(question_embeddings)), desc='Evaluating over each question/answer'):
+for i in tqdm(range(len(eval_questions_embeddings)), desc='Evaluating over each question/answer'):
     # Get question and answers
-    question_embedding = question_embeddings[i]
-    answers = answers_array[i]
+    question_embedding = eval_questions_embeddings[i]
+    answers = eval_answers_array[i]
     # Get k nearest examples via DPR
     scores, retrieved_examples = wiki_dataset.get_nearest_examples('embeddings', question_embedding, k=args.num_dpr_samples)
     data = get_data(retrieved_examples, answers, nlp, args.link_type, args.number_of_links, args.num_dpr_samples)
