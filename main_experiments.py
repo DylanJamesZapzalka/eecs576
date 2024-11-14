@@ -35,7 +35,7 @@ parser.add_argument("--number_of_links", required=True, type=int, help='Number o
 parser.add_argument("--gnn_type", required=True, type=str, help='Type of GNN for the reranker. Can be "gcn", "gat", or "sage".')
 parser.add_argument("--num_epochs", required=True, type=int, help='Number of epochs the GNN model will be trained over.')
 parser.add_argument("--num_dpr_samples", required=True, type=int, help='Number of samples DPR will retrieve before the second reranking step.')
-parser.add_argument("--num_eval_samples", default=10, type=int, help='Number of samples we evaluate over.')
+parser.add_argument("--num_eval_samples", default=100, type=int, help='Number of samples we evaluate over.')
 parser.add_argument("--batch_size", default=8, type=int, help='Batch size for training the gnn.')
 args = parser.parse_args()
 
@@ -178,5 +178,5 @@ for i in tqdm(range(len(eval_questions_embeddings)), desc='Evaluating over each 
     if torch.sum(doc_labels) !=0:
         accuracy += 1
 
-accuracy = accuracy / len(question_embeddings)
+accuracy = accuracy / len(eval_questions_embeddings)
 print(f'The accuracy is: {accuracy}')
