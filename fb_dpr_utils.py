@@ -10,6 +10,7 @@
 A bunch of classes and functions from the original DPR github and the nano repo:
 https://github.com/facebookresearch/DPR
 https://github.com/Hannibal046/nanoDPR/tree/master
+THIS CODE WAS FULLY OBTAINED FROM THE AFOREMENTIONED REPOs
 """
 
 import copy
