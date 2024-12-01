@@ -13,4 +13,5 @@ DATASETS_DIR = '/home/dylanz/eecs576_datasets'
 # DO NOT CHANGE
 TRIVIA_TEST_FILE_NAME = os.path.join(DATASETS_DIR, 'trivia-test.qa.csv')
 NQ_TEST_FILE_NAME = os.path.join(DATASETS_DIR, 'nq-test.qa.csv')
-# DO NOT CHANGE
+AMR_NQ_TRAIN_FILE_NAME = os.path.join(DATASETS_DIR, 'train.jsonl')
+AMR_NQ_TEST_FILE_NAME = os.path.join(DATASETS_DIR, 'test.jsonl')

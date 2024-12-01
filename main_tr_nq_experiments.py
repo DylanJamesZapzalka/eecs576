@@ -5,10 +5,10 @@ import csv
 import numpy as np
 import ast
 from tqdm import tqdm
-from utils import get_exact_match_score, get_data
+from utils import get_exact_match_score, get_data_kg_dpr
 import constants
 import argparse
-import spacy
+import spacy  # version 3.5
 from torch.nn import CrossEntropyLoss
 from models import GCN, GAT, GraphSAGE
 import torch
@@ -100,10 +100,10 @@ eval_questions_embeddings = question_embeddings[args.train_num_samples: args.tra
 train_answers_array = answers_array[0:args.train_num_samples]
 eval_answers_array = answers_array[args.train_num_samples: args.train_num_samples + args.eval_num_samples]
 
-# initialize language model
+# Iniitialize the language model
 nlp = spacy.load("en_core_web_sm")
 
-# add pipeline (declared through entry_points in setup.py)
+# Add the spacey entity link pipeline
 nlp.add_pipe("entityLinker", last=True)
 
 
@@ -130,7 +130,7 @@ for i in tqdm(range(len(train_questions_embeddings)), desc='Creating dataset'):
     answers = train_answers_array[i]
     # Get k nearest examples via DPR
     scores, retrieved_examples = wiki_dataset.get_nearest_examples('embeddings', question_embedding, k=args.num_dpr_samples)
-    data= get_data(retrieved_examples, answers, nlp, args.link_type, args.number_of_links, args.num_dpr_samples)
+    data= get_data_kg_dpr(retrieved_examples, answers, nlp, args.link_type, args.number_of_links)
     data_list.append(data)
 data_loader = DataLoader(data_list, batch_size=args.batch_size)
 
@@ -166,7 +166,7 @@ for i in tqdm(range(len(eval_questions_embeddings)), desc='Evaluating over each 
     answers = eval_answers_array[i]
     # Get k nearest examples via DPR
     scores, retrieved_examples = wiki_dataset.get_nearest_examples('embeddings', question_embedding, k=args.num_dpr_samples)
-    data = get_data(retrieved_examples, answers, nlp, args.link_type, args.number_of_links, args.num_dpr_samples)
+    data = get_data_kg_dpr(retrieved_examples, answers, nlp, args.link_type, args.number_of_links)
     data = data.to(device)
     y = data.y
 
