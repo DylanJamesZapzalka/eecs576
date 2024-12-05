@@ -141,13 +141,14 @@ else:
     for i in tqdm(range(0, args.train_num_samples), total=args.train_num_samples, desc='Creating dataset'):
         # Get question and answers
         question_embedding = question_embeddings_train[i]
-        answers = answers_array_train[i]
+        # answers = answers_array_train[i]
         # Get 100 nearest examples via DPR
         retrieved_examples = aqa_data_train[i]['retrieved_papers']
+        answers = aqa_data_train[i]['pids']
         # print(retrieved_examples[1])
         # quit()
         data = get_data_amr(retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links)
-        if count == 10:
+        if count == 0:
             print(data)
             print(data.x)
             print(data.edge_index)
@@ -203,6 +204,7 @@ for i in tqdm(range(len(question_embeddings_test)), desc='Evaluating over each q
     answers = answers_array_test[i]
 
     retrieved_examples = aqa_data_test[i]['retrieved_papers']
+    answers = aqa_data_test[i]['pids']
     data = get_data_amr(retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links)
     data = data.to(device)
     y = data.y

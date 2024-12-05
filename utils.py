@@ -57,6 +57,7 @@ def get_data_amr(retrieved_examples, answers, embeddings_dict, amr_data, amr_num
     passage_embeddings = []
     passage_texts = []
     nodes_list = []
+    pids = []
     for passage in retrieved_examples:
 
         text = passage['text']
@@ -66,9 +67,11 @@ def get_data_amr(retrieved_examples, answers, embeddings_dict, amr_data, amr_num
         passage_embeddings.append(passage_embedding)
 
         # Get nodes and filter
-        nodes = amr_data[pid]
-        filtered_nodes = [node for node in nodes if len(node) > 3 and node != 'amr-unknown' and node != 'this' and node != 'person' and node != 'person' and node != 'name' and node != 'also' and node != 'multi-sentence']
+        nodes = amr_data[pid]['nodes']
+        # print(nodes)
+        filtered_nodes = [node for node in nodes if node is not None and len(node) > 3 and node != 'amr-unknown' and node != 'this' and node != 'person' and node != 'person' and node != 'name' and node != 'also' and node != 'multi-sentence']
         nodes_list.append(filtered_nodes)
+        pids.append(pid)
     
     passage_embeddings = np.array(passage_embeddings)
 
@@ -80,7 +83,7 @@ def get_data_amr(retrieved_examples, answers, embeddings_dict, amr_data, amr_num
     edge_index = get_edge_index_amr(nodes_list, amr_number_of_links)
 
     # Get the labels and create the Data object
-    y = get_labels(retrieved_examples, answers)
+    y = get_labels(pids, answers)
     data = Data(x=x, edge_index=edge_index.t().contiguous(), y=y)
     return data
 
@@ -399,17 +402,14 @@ def get_labels_dpr(retrieved_examples, answers):
     return labels
 
 
-def get_labels(retrieved_examples, answers):
+def get_labels(pids, answers):
 
-    labels = torch.zeros(len(retrieved_examples), dtype=torch.float)
+    labels = torch.zeros(len(pids), dtype=torch.float)
   
     # Check each of the nearest passages for an exact match
-    for i in range(len(retrieved_examples)):
+    for i in range(len(pids)):
         # Get question and answers
-        retrieved_example = retrieved_examples[i]['text']
-        match = has_answer(answers, retrieved_example)
-        if match:
+        if pids[i] in answers:
             labels[i] = 1
-            continue
     labels = torch.unsqueeze(labels, dim=1)
     return labels
