@@ -313,7 +313,7 @@ def get_labels(retrieved_examples, answers):
 
 def get_kg(pkl_path, retrieved_examples, answers, embeddings_dict, subgraphs):
     if os.path.exists(pkl_path):
-        with open(pkl_path, 'wb') as file:
+        with open(pkl_path, 'rb') as file:
             return pickle.load(file)
     else:
         data = get_data_kg(retrieved_examples, answers, embeddings_dict, subgraphs)
