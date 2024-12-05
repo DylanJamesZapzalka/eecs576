@@ -144,7 +144,7 @@ for i in tqdm(range(args.num_epochs), desc='Training the reranker...'):
         optimizer.step()
 
 print(
-    f'The average number of edge indices per graph is: {num_edge_indices / (args.train_num_samples * args.num_epochs)}')
+    f'The average number of edge indices per graph is: {num_edge_indices / (len(aqa_data_train) * args.num_epochs)}')
 
 # Start the evaluation process
 model.eval()
