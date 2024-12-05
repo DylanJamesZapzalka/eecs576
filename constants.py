@@ -7,7 +7,7 @@ NQ_TEST_URL = 'https://dl.fbaipublicfiles.com/dpr/data/retriever/nq-test.qa.csv'
 # DO NOT CHANGE
 
 # SHOULD CHANGE
-DATASETS_DIR = '/home/dylanz/eecs576_datasets'
+DATASETS_DIR = '/scratch/chaijy_root/chaijy2/josuetf/eecs576_datasets/NQ_amr/nodes_edges_qtc/amrbart/in_link'
 # SHOULD CHANGE
 
 # DO NOT CHANGE

@@ -1,0 +1,5 @@
+__pycache__/
+pid_embeddings.pickle
+requirements.txt
+retrieval_results_qa_train.json
+environment.yml

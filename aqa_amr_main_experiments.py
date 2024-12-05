@@ -11,10 +11,12 @@ import argparse
 import spacy
 from torch.nn import CrossEntropyLoss
 from models import GCN, GAT, GraphSAGE
+from amr_bart_utils import load_data_aqa, load_data_aqa_val
 import torch
 from torch_geometric.loader import DataLoader
 from amr_bart_utils import load_data
-
+import pickle
+import os
 
 # Make sure cuda is being used
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -26,6 +28,10 @@ TRIVIA_TEST_FILE_NAME = constants.TRIVIA_TEST_FILE_NAME
 AMR_NQ_TEST_FILE_NAME = constants.AMR_NQ_TEST_FILE_NAME
 AMR_NQ_TRAIN_FILE_NAME = constants.AMR_NQ_TRAIN_FILE_NAME
 DATASETS_DIR = constants.DATASETS_DIR
+AQA_TRAIN_FILE_NAME = "/scratch/chaijy_root/chaijy2/josuetf/eecs576_datasets/retrieval_results_qa_train.json"
+AQA_TEST_FILE_NAME = "/scratch/chaijy_root/chaijy2/josuetf/eecs576_datasets/retrieval_results_qa_test_wo_ans.json"
+AQA_VAL_FILE_NAME = "/scratch/chaijy_root/chaijy2/josuetf/eecs576_datasets/retrieval_results_qa_valid_wo_ans.json"
+AQA_VAL_ANS = "/scratch/chaijy_root/chaijy2/josuetf/eecs576_datasets/qa_valid_flag.txt"
 
 
 # Get arguments for experiments
@@ -51,14 +57,13 @@ q_tokenizer = DPRQuestionEncoderTokenizer.from_pretrained("facebook/dpr-question
 
 
 
-amr_nq_data_train = load_data(AMR_NQ_TRAIN_FILE_NAME, args.train_num_samples)
-questions_array_train = [example['question'] for example in amr_nq_data_train]
-answers_array_train = [example['answers'] for example in amr_nq_data_train]
+aqa_data_train = load_data_aqa(AQA_TRAIN_FILE_NAME, args.train_num_samples)
+questions_array_train = [example['question'] for example in aqa_data_train]
+answers_array_train = [example['pids'] for example in aqa_data_train]
 
-amr_nq_data_test = load_data(AMR_NQ_TEST_FILE_NAME, args.test_num_samples)
-questions_array_test = [example['question'] for example in amr_nq_data_test]
-answers_array_test = [example['answers'] for example in amr_nq_data_test]
-
+aqa_data_test = load_data_aqa_val(AQA_VAL_FILE_NAME, AQA_VAL_ANS, args.test_num_samples)
+questions_array_test = [example['question'] for example in aqa_data_test]
+answers_array_test = [example['pids'] for example in aqa_data_test]
 
 # Get embeddings to each of the questions
 question_embeddings_train = []
@@ -85,8 +90,6 @@ nlp = spacy.load("en_core_web_sm")
 # Add the spacey entity link pipeline
 nlp.add_pipe("entityLinker", last=True)
 
-
-
 # Get the reranker GNN
 if args.gnn_type == 'gcn':
     model = GCN().to(device)
@@ -101,50 +104,58 @@ else:
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=5e-4)
 ce_loss = torch.nn.CrossEntropyLoss()
 
+# AQA_TRAIN_FILE_NAME = os.path.join(DATASETS_DIR, 'retrieval_results_qa_train.json')
+# AQA_TEST_FILE_NAME = os.path.join(DATASETS_DIR, 'retrieval_results_qa_test_wo_ans.json')
+# AQA_VAL_FILE_NAME = os.path.join(DATASETS_DIR, 'retrieval_results_qa_valid_wo_ans.json')
+# AQA_VAL_ANS = os.path.join(DATASETS_DIR, "qa_valid_flag.txt")
 
 
 # Obtain the dataset/dataloader for both train and test
-if args.model_name == 'kg':
-    data_list = []
-    for i in tqdm(range(len(question_embeddings_train)), desc='Creating kg dataset'):
-        # Get question and answers
-        question_embedding = question_embeddings_train[i]
-        answers = answers_array_train[i]
-        # Get k nearest examples via DPR
-        retrieved_examples = amr_nq_data_train[i]['ctxs']
-        data = get_data_kg(retrieved_examples, answers, nlp, args.kg_number_of_links, args.kg_link_type, ctx_encoder, ctx_tokenizer)
-        data_list.append(data)
-    data_loader_train = DataLoader(data_list, batch_size=args.batch_size)
+# if args.model_name == 'kg':
+#     data_list = []
+#     for i in tqdm(range(len(question_embeddings_train)), desc='Creating kg dataset'):
+#         # Get question and answers
+#         question_embedding = question_embeddings_train[i]
+#         answers = answers_array_train[i]
+#         # Get k nearest examples via DPR
+#         retrieved_examples = amr_nq_data_train[i]['ctxs']
+#         data = get_data_kg(retrieved_examples, answers, nlp, args.kg_number_of_links, args.kg_link_type, ctx_encoder, ctx_tokenizer)
+#         data_list.append(data)
+#     data_loader_train = DataLoader(data_list, batch_size=args.batch_size)
 
-elif args.model_name == 'amr':
-    data_list = []
+# elif args.model_name == 'amr':
+print("loading amr_graphs...")
+data_list = []
+with open('/scratch/chaijy_root/chaijy2/josuetf/eecs576_datasets/amr_graphs.pickle', 'rb') as handle:
+    amr_data = pickle.load(handle)
+
+print("loading pid_embeddings...")
+emb_path = "/scratch/chaijy_root/chaijy2/josuetf/eecs576/pid_embeddings.pickle"
+with open(emb_path, 'rb') as file:
+    embeddings_dict = pickle.load(file)
+
+if os.path.exists("data_loader_train.pth"):
+    data_loader_train = torch.load("data_loader_train.pth")
+else:
+    count = 0
     for i in tqdm(range(0, args.train_num_samples), total=args.train_num_samples, desc='Creating dataset'):
         # Get question and answers
         question_embedding = question_embeddings_train[i]
         answers = answers_array_train[i]
         # Get 100 nearest examples via DPR
-        retrieved_examples = amr_nq_data_train[i]['ctxs'][:10]
+        retrieved_examples = aqa_data_train[i]['retrieved_papers']
         # print(retrieved_examples[1])
         # quit()
-        data = get_data_amr(retrieved_examples, answers, ctx_encoder, ctx_tokenizer, args.amr_number_of_links)
-        print(data)
-        print(data.x)
-        print(data.edge_index)
-        print(data.y)
+        data = get_data_amr(retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links)
+        if count == 10:
+            print(data)
+            print(data.x)
+            print(data.edge_index)
+            print(data.y)
         data_list.append(data)
+        count += 1
     data_loader_train = DataLoader(data_list, batch_size=args.batch_size)
-
-elif args.model_name == 'amr+kg':
-    data_list = []
-    for i in tqdm(range(len(question_embeddings_train)), desc='Creating amr+kg dataset'):
-        # Get question and answers
-        question_embedding = question_embeddings_train[i]
-        answers = answers_array_train[i]
-        # Get k nearest examples via DPR
-        retrieved_examples = amr_nq_data_train[i]['ctxs']
-        data = get_data_amg_plus_kg(retrieved_examples, answers, nlp, args.kg_number_of_links, args.kg_link_type, args.amr_number_of_links, ctx_encoder, ctx_tokenizer)
-        data_list.append(data)
-    data_loader_train = DataLoader(data_list, batch_size=args.batch_size)
+    torch.save(data_loader_train, "data_loader_train.pth")
 
 # for batch in data_loader_train:
 #     print(batch)
@@ -155,7 +166,7 @@ elif args.model_name == 'amr+kg':
 num_edge_indices = 0
 for i in tqdm(range(args.num_epochs), desc='Training the reranker...'):
     for batch in data_loader_train:
-
+        # print(batch)
         # Get data
         batch.x = batch.x.to(device)
         batch.y = batch.y.to(device)
@@ -191,22 +202,10 @@ for i in tqdm(range(len(question_embeddings_test)), desc='Evaluating over each q
     question_embedding = question_embeddings_test[i]
     answers = answers_array_test[i]
 
-    # Get 100 nearest examples via DPR
-    if args.model_name == 'amr':        
-        retrieved_examples = amr_nq_data_test[i]['ctxs']
-        data = get_data_amr(retrieved_examples, answers, ctx_encoder, ctx_tokenizer, args.amr_number_of_links)
-        data = data.to(device)
-        y = data.y
-    elif args.model_name == 'kg':        
-        retrieved_examples = amr_nq_data_test[i]['ctxs']
-        data = get_data_kg(retrieved_examples, answers, nlp, args.kg_number_of_links, args.kg_link_type, ctx_encoder, ctx_tokenizer)
-        data = data.to(device)
-        y = data.y
-    elif args.model_name == 'amr+kg':
-        retrieved_examples = amr_nq_data_test[i]['ctxs']
-        data = get_data_amg_plus_kg(retrieved_examples, answers, nlp, args.kg_number_of_links, args.kg_link_type, args.amr_number_of_links, ctx_encoder, ctx_tokenizer)
-        data = data.to(device)
-        y = data.y
+    retrieved_examples = aqa_data_test[i]['retrieved_papers']
+    data = get_data_amr(retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links)
+    data = data.to(device)
+    y = data.y
 
     # Calculate the scores
     outputs = model(data)

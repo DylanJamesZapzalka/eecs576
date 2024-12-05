@@ -263,6 +263,31 @@ def has_answer2(answers, text, tokenizer, match_type='string') -> bool:
 
 check_answers = has_answer2
 
+def load_data_aqa_val(data_path, ans_path, num_samples):
+    with open(data_path, 'r') as f:
+        data = json.load(f)
+    pids_arr = []
+    with open(ans_path, 'r') as f:
+        for line in f:
+            example = json.loads(line.strip())
+            pids_arr.append(example['pids'])
+    examples = []
+    for i, example in tqdm(enumerate(data), desc='Loading: '):
+        example['pids']=pids_arr[i]
+        examples.append(example)
+        if num_samples and len(examples) >= num_samples:
+            break
+    return examples
+def load_data_aqa(data_path, num_samples):
+    with open(data_path, 'r') as f:
+        data = json.load(f)
+    examples = []
+    for k, example in tqdm(enumerate(data), desc='Loading: '):
+        examples.append(example)
+        if num_samples and len(examples) >= num_samples:
+            break
+    return examples
+
 def load_data(data_path=None, num_samples=4000):
     assert data_path
     if data_path.endswith('.jsonl'):
