@@ -187,7 +187,6 @@ for i in tqdm(range(args.num_epochs), desc='Training the reranker...'):
 
 print(f'The average number of edge indices per graph is: {num_edge_indices / (args.train_num_samples * args.num_epochs)}')
 
-
 # Start the evaluation process
 model.eval()
 accuracy_5 = 0
@@ -264,3 +263,5 @@ print(f'The mhits top 5 is: {mhits_5}')
 print(f'The mhits top 10 is: {mhits_10}')
 print(f'The mhits top 20 is: {mhits_20}')
 print(f'The MRR is: {mrr}')
+
+torch.save(model.state_dict(), f"AMRRerankerModel{args.num_epochs}Epochs.pth")
