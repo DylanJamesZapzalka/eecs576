@@ -12,7 +12,7 @@ from transformers import DPRContextEncoder, DPRContextEncoderTokenizer, DPRQuest
 import constants
 from amr_bart_utils import load_data_aqa, load_data_aqa_val
 from models import GCN, GAT, GraphSAGE
-from utils import get_data_kg, get_kg
+from utils import get_data_kg, get_labels_aqa, get_data_kg_temp
 
 # Make sure cuda is being used
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -118,7 +118,7 @@ for i in tqdm(range(len(question_embeddings_train)), desc='Creating kg dataset')
     # Get k nearest examples via DPR
     retrieved_examples = aqa_data_train[i]['retrieved_papers']
     pkl_path = f'data/train_kgs/{i}.pkl'
-    data = get_kg(pkl_path, retrieved_examples, answers, embeddings_dict, subgraphs)
+    data = get_data_kg_temp(pkl_path, retrieved_examples, answers)
     data_list.append(data)
 data_loader_train = DataLoader(data_list, batch_size=args.batch_size)
 
@@ -164,7 +164,7 @@ for i in tqdm(range(len(question_embeddings_test)), desc='Evaluating over each q
     # Get 100 nearest examples via DPR
     retrieved_examples = aqa_data_test[i]['retrieved_papers']
     pkl_path = f'data/test_kgs/{i}.pkl'
-    data = get_kg(pkl_path, retrieved_examples, answers, embeddings_dict, subgraphs)
+    data = get_data_kg_temp(pkl_path, retrieved_examples, answers)
     data = data.to(device)
     y = data.y
 

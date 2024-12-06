@@ -95,12 +95,14 @@ def get_data_kg(retrieved_examples, answers, embeddings_dict, subgraphs):
     # Get passage embeddings and node features of amr graphs
     passage_embeddings = []
     passage_texts = []
+    pids = []
     for passage in retrieved_examples:
         text = passage['text']
         pid = passage['pid']
         passage_texts.append(text)
         passage_embedding = embeddings_dict[pid]
         passage_embeddings.append(passage_embedding)
+        pids.append(pid)
 
     passage_embeddings = np.array(passage_embeddings)
 
@@ -112,8 +114,23 @@ def get_data_kg(retrieved_examples, answers, embeddings_dict, subgraphs):
     edge_index = get_edge_index_shared_entities_kg(retrieved_examples, subgraphs)
 
     # Get the labels and create the Data object
-    y = get_labels(retrieved_examples, answers)
+    y = get_labels_aqa(pids, answers)
     data = Data(x=x, edge_index=edge_index.t().contiguous(), y=y)
+    return data
+
+def get_data_kg_temp(pkl_path, retrieved_examples, answers):
+    # Get passage embeddings and node features of amr graphs
+    passage_embeddings = []
+    passage_texts = []
+    pids = []
+    for passage in retrieved_examples:
+        pids.append(passage['pid'])
+
+    # Get the labels and create the Data object
+    y = get_labels_aqa(pids, answers)
+    with open(pkl_path, 'rb') as f:
+        data = pickle.load(f)
+    data.y = y
     return data
 
 
@@ -297,6 +314,17 @@ def get_labels_dpr(retrieved_examples, answers):
     return labels
 
 
+def get_labels_aqa(pids, answers):
+    labels = torch.zeros(len(pids), dtype=torch.float)
+
+    # Check each of the nearest passages for an exact match
+    for i in range(len(pids)):
+        # Get question and answers
+        if pids[i] in answers:
+            labels[i] = 1
+    labels = torch.unsqueeze(labels, dim=1)
+    return labels
+
 def get_labels(retrieved_examples, answers):
     labels = torch.zeros(len(retrieved_examples), dtype=torch.float)
 
@@ -310,13 +338,3 @@ def get_labels(retrieved_examples, answers):
             continue
     labels = torch.unsqueeze(labels, dim=1)
     return labels
-
-def get_kg(pkl_path, retrieved_examples, answers, embeddings_dict, subgraphs):
-    if os.path.exists(pkl_path):
-        with open(pkl_path, 'rb') as file:
-            return pickle.load(file)
-    else:
-        data = get_data_kg(retrieved_examples, answers, embeddings_dict, subgraphs)
-        with open(pkl_path, 'wb') as file:
-            pickle.dump(data, file)
-        return data
