@@ -118,7 +118,7 @@ def get_data_kg(retrieved_examples, answers, embeddings_dict, subgraphs):
     data = Data(x=x, edge_index=edge_index.t().contiguous(), y=y)
     return data
 
-def get_data_kg_temp(pkl_path, retrieved_examples, answers):
+def get_data_kg_update_y(pkl_path, retrieved_examples, answers):
     # Get passage embeddings and node features of amr graphs
     passage_embeddings = []
     passage_texts = []

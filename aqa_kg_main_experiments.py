@@ -12,7 +12,7 @@ from transformers import DPRContextEncoder, DPRContextEncoderTokenizer, DPRQuest
 import constants
 from amr_bart_utils import load_data_aqa, load_data_aqa_val
 from models import GCN, GAT, GraphSAGE
-from utils import get_data_kg, get_labels_aqa, get_data_kg_temp
+from utils import get_data_kg, get_labels_aqa, get_data_kg_update_y
 
 # Make sure cuda is being used
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -43,7 +43,7 @@ parser.add_argument("--amr_number_of_links", type=int,
                     help='Number of connections needed to create an edge for the reranking graph.')
 parser.add_argument("--gnn_type", type=str, default="gcn",
                     help='Type of GNN for the reranker. Can be "gcn", "gat", or "sage".')
-parser.add_argument("--num_epochs", type=int, default=3, help='Number of epochs the GNN model will be trained over.')
+parser.add_argument("--num_epochs", type=int, default=100, help='Number of epochs the GNN model will be trained over.')
 parser.add_argument("--batch_size", default=8, type=int, help='Batch size for training the gnn.')
 
 args = parser.parse_args()
@@ -142,6 +142,7 @@ for i in tqdm(range(args.num_epochs), desc='Training the reranker...'):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+torch.save(model.state_dict(), f"KG_{args.gnn_type}_RerankerModel{args.num_epochs}Epochs.pth")
 
 print(
     f'The average number of edge indices per graph is: {num_edge_indices / (len(aqa_data_train) * args.num_epochs)}')
