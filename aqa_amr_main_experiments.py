@@ -5,7 +5,7 @@ import csv
 import numpy as np
 import ast
 from tqdm import tqdm
-from utils import get_exact_match_score, get_data_kg, get_data_amr, get_data_kg_dpr, get_data_amg_plus_kg, pairwise_ranking_loss
+from utils import get_exact_match_score, get_data_kg, get_data_amr, get_data_kg_dpr, get_data_amg_plus_kg, pairwise_ranking_loss, cross_entropy_ranking_loss
 import constants
 import argparse
 import spacy
@@ -46,6 +46,7 @@ parser.add_argument("--amr_number_of_links", type=int, help='Number of connectio
 parser.add_argument("--gnn_type", required=True, type=str, help='Type of GNN for the reranker. Can be "gcn", "gat", or "sage".')
 parser.add_argument("--num_epochs", required=True, type=int, help='Number of epochs the GNN model will be trained over.')
 parser.add_argument("--batch_size", default=8, type=int, help='Batch size for training the gnn.')
+parser.add_argument("--loss_function", default=8, type=str, help='Loss functino used for training.')
 args = parser.parse_args()
 
 
@@ -67,23 +68,36 @@ questions_array_test = [example['question'] for example in aqa_data_test]
 answers_array_test = [example['pids'] for example in aqa_data_test]
 
 # Get embeddings to each of the questions
-question_embeddings_train = []
-for question in tqdm(questions_array_train, desc='Embedding questions'):
-    question_tokens = q_tokenizer(question, max_length=512, truncation=True, padding='max_length', return_tensors='pt').to(device)
-    question_embedding = q_encoder(**question_tokens)
-    question_embedding = question_embedding.pooler_output
-    question_embedding = question_embedding.cpu().detach().numpy()
-    question_embeddings_train.append(question_embedding)
 
-question_embeddings_test = []
-for question in tqdm(questions_array_test, desc='Embedding questions'):
-    question_tokens = q_tokenizer(question, max_length=512, truncation=True, padding='max_length', return_tensors='pt').to(device)
-    question_embedding = q_encoder(**question_tokens)
-    question_embedding = question_embedding.pooler_output
-    question_embedding = question_embedding.cpu().detach().numpy()
-    question_embeddings_test.append(question_embedding)
+if os.path.exists("question_embeddings_train.pickle"):
+    with open('question_embeddings_train.pickle', 'rb') as handle:
+        question_embeddings_train = pickle.load(handle)
+else:
+    question_embeddings_train = []
+    for question in tqdm(questions_array_train, desc='Embedding questions'):
+        question_tokens = q_tokenizer(question, max_length=512, truncation=True, padding='max_length', return_tensors='pt').to(device)
+        question_embedding = q_encoder(**question_tokens)
+        question_embedding = question_embedding.pooler_output
+        question_embedding = question_embedding.cpu().detach().numpy()
+        question_embeddings_train.append(question_embedding)
 
+    with open('question_embeddings_train.pickle', 'wb') as handle:
+        pickle.dump(question_embeddings_train, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
+if os.path.exists("question_embeddings_test.pickle"):
+    with open('question_embeddings_test.pickle', 'rb') as handle:
+        question_embeddings_test = pickle.load(handle)
+else:
+    question_embeddings_test = []
+    for question in tqdm(questions_array_test, desc='Embedding questions'):
+        question_tokens = q_tokenizer(question, max_length=512, truncation=True, padding='max_length', return_tensors='pt').to(device)
+        question_embedding = q_encoder(**question_tokens)
+        question_embedding = question_embedding.pooler_output
+        question_embedding = question_embedding.cpu().detach().numpy()
+        question_embeddings_test.append(question_embedding)
+
+    with open('question_embeddings_test.pickle', 'wb') as handle:
+        pickle.dump(question_embeddings_test, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 # Iniitialize the language model
 nlp = spacy.load("en_core_web_sm")
@@ -135,8 +149,10 @@ emb_path = "/scratch/chaijy_root/chaijy2/josuetf/eecs576/pid_embeddings.pickle"
 with open(emb_path, 'rb') as file:
     embeddings_dict = pickle.load(file)
 
-if os.path.exists("data_loader_train.pth") and args.model_name == 'amr':
-    data_loader_train = torch.load("data_loader_train.pth")
+if args.model_name == 'amr' and os.path.exists("data_loader_train_amr.pth"):
+    data_loader_train = torch.load("data_loader_train_amr.pth")
+elif args.model_name == 'amr+kg' and os.path.exists("data_loader_train_amr_kg.pth"):
+    data_loader_train = torch.load("data_loader_train_amr_kg.pth")
 else:
     if args.model_name == 'amr':
         count = 0
@@ -160,7 +176,7 @@ else:
             data_list.append(data)
             count += 1
         data_loader_train = DataLoader(data_list, batch_size=args.batch_size)
-        torch.save(data_loader_train, "data_loader_train.pth")
+        torch.save(data_loader_train, "data_loader_train_amr.pth")
     if args.model_name == 'amr+kg':
         data_list = []
         for i in tqdm(range(len(question_embeddings_train)), desc='Creating amr+kg dataset'):
@@ -177,7 +193,7 @@ else:
             data = get_data_amg_plus_kg(pkl_path_kg, pkl_path_amr, retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links, question_embedding)
             data_list.append(data)
         data_loader_train = DataLoader(data_list, batch_size=args.batch_size)
-
+        torch.save(data_loader_train, "data_loader_train_amr_kg.pth")
 # for batch in data_loader_train:
 #     print(batch)
 # print("Quitting...")
@@ -185,12 +201,11 @@ else:
 
 # Start training the GNN
 num_edge_indices = 0
+model.train()
 for i in tqdm(range(args.num_epochs), desc='Training the reranker...'):
-    model.train()
     epoch_loss = 0
 
     for batch in data_loader_train:
-        # print(batch)
         # Get data
         batch.x = batch.x.to(device)
         batch.y = batch.y.to(device)
@@ -200,10 +215,26 @@ for i in tqdm(range(args.num_epochs), desc='Training the reranker...'):
 
         # Get loss
         outputs = model(batch)
-        question_embedding = torch.tensor(question_embedding).squeeze().to(device)
-        scores = torch.matmul(outputs, question_embedding.t()).squeeze(-1)
-        loss = pairwise_ranking_loss(scores, batch.y, r=1.0, margin=1.0)
+        outputs = torch.split(outputs, 100)
+        outputs = torch.stack(outputs, dim=0)
 
+        question_embedding = torch.tensor(question_embedding).squeeze().to(device)
+        print("question embedding shape:", question_embedding)
+        print("outputs shape:", outputs)
+        scores = torch.matmul(outputs, question_embedding.t()).squeeze(-1)
+        scores = scores.sum(dim=-1)
+        y = torch.split(batch.y, 100)
+        y = torch.stack(y, dim=0)
+        y = torch.squeeze(y)
+        print("y shape:", y.shape)
+        print("scores shape:", scores.shape)
+        if args.loss_function == "pairwise":
+            loss = pairwise_ranking_loss(scores, y)
+        elif args.loss_function == "cross_entropy":
+            loss = cross_entropy_ranking_loss(scores, y)
+        # loss = pairwise_ranking_loss(scores, y, r=1.0, margin=1.0)
+        # loss = cross_entropy_ranking_loss(scores, y)
+        # loss = ce_loss(scores, torch.squeeze(y))
         # Perform backward pass
         optimizer.zero_grad()
         loss.backward()
@@ -233,7 +264,7 @@ for i in tqdm(range(len(question_embeddings_test)), desc='Evaluating over each q
     if args.model_name == 'amr':
         retrieved_examples = aqa_data_test[i]['retrieved_papers']
         answers = aqa_data_test[i]['pids']
-        data = get_data_amr(retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links)
+        data = get_data_amr(retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links, question_embedding)
         # with open(f'test_amrs/{i}.pkl', 'wb') as handle:
         #     pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
         data = data.to(device)
@@ -243,7 +274,7 @@ for i in tqdm(range(len(question_embeddings_test)), desc='Evaluating over each q
         answers = aqa_data_test[i]['pids']
         pkl_path_kg = f'data/test_kgs/{i}.pkl'
         pkl_path_amr = f'data/test_amrs/{i}.pkl'
-        data = get_data_amg_plus_kg(pkl_path_kg, pkl_path_amr, retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links)
+        data = get_data_amg_plus_kg(pkl_path_kg, pkl_path_amr, retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links, question_embedding)
         data = data.to(device)
         y = data.y
 
