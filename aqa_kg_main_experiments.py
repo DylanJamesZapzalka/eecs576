@@ -6,13 +6,14 @@ import pickle
 import spacy
 import torch
 from torch_geometric.loader import DataLoader
+import torch.nn.functional as F
 from tqdm import tqdm
 from transformers import DPRContextEncoder, DPRContextEncoderTokenizer, DPRQuestionEncoder, DPRQuestionEncoderTokenizer
 
 import constants
 from amr_bart_utils import load_data_aqa, load_data_aqa_val
 from models import GCN, GAT, GraphSAGE
-from utils import get_data_kg, get_labels_aqa, get_data_kg_update_y
+from utils import get_data_kg_update_y, pairwise_ranking_loss
 
 # Make sure cuda is being used
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -43,7 +44,7 @@ parser.add_argument("--amr_number_of_links", type=int,
                     help='Number of connections needed to create an edge for the reranking graph.')
 parser.add_argument("--gnn_type", type=str, default="gcn",
                     help='Type of GNN for the reranker. Can be "gcn", "gat", or "sage".')
-parser.add_argument("--num_epochs", type=int, default=100, help='Number of epochs the GNN model will be trained over.')
+parser.add_argument("--num_epochs", type=int, default=10, help='Number of epochs the GNN model will be trained over.')
 parser.add_argument("--batch_size", default=8, type=int, help='Batch size for training the gnn.')
 
 args = parser.parse_args()
@@ -64,23 +65,36 @@ questions_array_test = [example['question'] for example in aqa_data_test]
 answers_array_test = [example['pids'] for example in aqa_data_test]
 
 # Get embeddings to each of the questions
-question_embeddings_train = []
-for question in tqdm(questions_array_train, desc='Embedding questions'):
-    question_tokens = q_tokenizer(question, max_length=512, truncation=True, padding='max_length',
-                                  return_tensors='pt').to(device)
-    question_embedding = q_encoder(**question_tokens)
-    question_embedding = question_embedding.pooler_output
-    question_embedding = question_embedding.cpu().detach().numpy()
-    question_embeddings_train.append(question_embedding)
+if os.path.exists("question_embeddings_train.pickle"):
+    with open('question_embeddings_train.pickle', 'rb') as handle:
+        question_embeddings_train = pickle.load(handle)
+else:
+    question_embeddings_train = []
+    for question in tqdm(questions_array_train, desc='Embedding questions'):
+        question_tokens = q_tokenizer(question, max_length=512, truncation=True, padding='max_length',
+                                      return_tensors='pt').to(device)
+        question_embedding = q_encoder(**question_tokens)
+        question_embedding = question_embedding.pooler_output
+        question_embedding = question_embedding.cpu().detach().numpy()
+        question_embeddings_train.append(question_embedding)
+    with open('question_embeddings_train.pickle', 'wb') as handle:
+        pickle.dump(question_embeddings_train, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-question_embeddings_test = []
-for question in tqdm(questions_array_test, desc='Embedding questions'):
-    question_tokens = q_tokenizer(question, max_length=512, truncation=True, padding='max_length',
-                                  return_tensors='pt').to(device)
-    question_embedding = q_encoder(**question_tokens)
-    question_embedding = question_embedding.pooler_output
-    question_embedding = question_embedding.cpu().detach().numpy()
-    question_embeddings_test.append(question_embedding)
+if os.path.exists("question_embeddings_test.pickle"):
+    with open('question_embeddings_test.pickle', 'rb') as handle:
+        question_embeddings_test = pickle.load(handle)
+else:
+    question_embeddings_test = []
+    for question in tqdm(questions_array_test, desc='Embedding questions'):
+        question_tokens = q_tokenizer(question, max_length=512, truncation=True, padding='max_length',
+                                      return_tensors='pt').to(device)
+        question_embedding = q_encoder(**question_tokens)
+        question_embedding = question_embedding.pooler_output
+        question_embedding = question_embedding.cpu().detach().numpy()
+        question_embeddings_test.append(question_embedding)
+    with open('question_embeddings_test.pickle', 'wb') as handle:
+        pickle.dump(question_embeddings_test, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
 
 # Iniitialize the language model
 nlp = spacy.load("en_core_web_sm")
@@ -118,30 +132,53 @@ for i in tqdm(range(len(question_embeddings_train)), desc='Creating kg dataset')
     # Get k nearest examples via DPR
     retrieved_examples = aqa_data_train[i]['retrieved_papers']
     pkl_path = f'data/train_kgs/{i}.pkl'
-    data = get_data_kg_temp(pkl_path, retrieved_examples, answers)
+    data = get_data_kg_update_y(pkl_path, retrieved_examples, answers, question_embedding)
     data_list.append(data)
 data_loader_train = DataLoader(data_list, batch_size=args.batch_size)
 
+def document_loss(scores, labels):
+    exps = torch.exp(torch.squeeze(scores))
+    exps_sum = torch.sum(torch.squeeze(exps))
+    return - torch.log((exps / exps_sum) * torch.squeeze(labels))
+    # softmax = F.softmax(scores, dim=1)
+    # softmax = torch.clamp(softmax, min=1e-8)
+    # loss = -torch.sum(labels * torch.log(softmax))
+
+   #  return loss / scores.size(0)
+
 # Start training the GNN
 num_edge_indices = 0
+model.train()
 for i in tqdm(range(args.num_epochs), desc='Training the reranker...'):
+    epoch_loss = 0
+
     for batch in data_loader_train:
         # Get data
         batch.x = batch.x.to(device)
         batch.y = batch.y.to(device)
         batch.edge_index = batch.edge_index.to(device)
         num_edge_indices += batch.edge_index.shape[1]
+        question_embedding = batch.question_embedding
 
         # Get loss
         outputs = model(batch)
-        question_embedding = torch.tensor(question_embedding).to(device)
-        scores = torch.matmul(outputs, question_embedding.t())
-        loss = ce_loss(scores.t(), batch.y.t())
+        outputs = torch.split(outputs, 100)
+        outputs = torch.stack(outputs, dim=0)
 
+        question_embedding = torch.tensor(question_embedding).to(device)
+        scores = torch.matmul(outputs, question_embedding.transpose(1, 2)).squeeze(-1)
+        loss = ce_loss(scores.view(-1),batch.y.T)
         # Perform backward pass
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+
+        epoch_loss += loss.item()
+
+    print(f"Loss for epoch {i}:", epoch_loss)
+
+print(f'The average number of edge indices per graph is: {num_edge_indices / (len(questions_array_train) * args.num_epochs)}')
+
 torch.save(model.state_dict(), f"KG_{args.gnn_type}_RerankerModel{args.num_epochs}Epochs.pth")
 
 print(
@@ -165,7 +202,7 @@ for i in tqdm(range(len(question_embeddings_test)), desc='Evaluating over each q
     # Get 100 nearest examples via DPR
     retrieved_examples = aqa_data_test[i]['retrieved_papers']
     pkl_path = f'data/test_kgs/{i}.pkl'
-    data = get_data_kg_temp(pkl_path, retrieved_examples, answers)
+    data = get_data_kg_update_y(pkl_path, retrieved_examples, answers, question_embedding)
     data = data.to(device)
     y = data.y
 
