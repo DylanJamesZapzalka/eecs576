@@ -17,6 +17,7 @@ from torch_geometric.loader import DataLoader
 from amr_bart_utils import load_data
 import pickle
 import os
+import pprint
 import wandb
 
 # Make sure cuda is being used
@@ -91,20 +92,6 @@ nlp = spacy.load("en_core_web_sm")
 # Add the spacey entity link pipeline
 nlp.add_pipe("entityLinker", last=True)
 
-# Get the reranker GNN
-if args.gnn_type == 'gcn':
-    model = GCN().to(device)
-elif args.gnn_type == 'gat':
-    model = GAT().to(device)
-elif args.gnn_type == 'sage':
-    model = GraphSAGE().to(device)
-else:
-    raise Exception("Invalid value for gnn_type.")
-
-# Get the loss function
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=5e-4)
-ce_loss = torch.nn.CrossEntropyLoss()
-
 # AQA_TRAIN_FILE_NAME = os.path.join(DATASETS_DIR, 'retrieval_results_qa_train.json')
 # AQA_TEST_FILE_NAME = os.path.join(DATASETS_DIR, 'retrieval_results_qa_test_wo_ans.json')
 # AQA_VAL_FILE_NAME = os.path.join(DATASETS_DIR, 'retrieval_results_qa_valid_wo_ans.json')
@@ -149,7 +136,7 @@ else:
             answers = aqa_data_train[i]['pids']
             # print(retrieved_examples[1])
             # quit()
-            data = get_data_amr(retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links, question_embedding)
+            data = get_data_amr(retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links)
             if count == 0:
                 print(data)
                 print(data.x)
@@ -174,7 +161,7 @@ else:
             # quit()
             pkl_path_kg = f'data/train_kgs/{i}.pkl'
             pkl_path_amr = f'data/train_amrs/{i}.pkl'
-            data = get_data_amg_plus_kg(pkl_path_kg, pkl_path_amr, retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links, question_embedding)
+            data = get_data_amg_plus_kg(pkl_path_kg, pkl_path_amr, retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links)
             data_list.append(data)
         data_loader_train = DataLoader(data_list, batch_size=args.batch_size)
 
@@ -183,124 +170,185 @@ else:
 # print("Quitting...")
 # quit()
 
-# Start training the GNN
-num_edge_indices = 0
-for i in tqdm(range(args.num_epochs), desc='Training the reranker...'):
-    model.train()
-    epoch_loss = 0
+sweep_config = {
+    'method': 'grid'
+}
 
-    for batch in data_loader_train:
-        # print(batch)
-        # Get data
-        batch.x = batch.x.to(device)
-        batch.y = batch.y.to(device)
-        batch.edge_index = batch.edge_index.to(device)
-        num_edge_indices += batch.edge_index.shape[1]
-        question_embedding = batch.question_embedding
+metric = {
+    'name': 'loss',
+    'goal': 'minimize'
+}
 
-        # Get loss
-        outputs = model(batch)
-        question_embedding = torch.tensor(question_embedding).squeeze().to(device)
-        scores = torch.matmul(outputs, question_embedding.t()).squeeze(-1)
-        loss = pairwise_ranking_loss(scores, batch.y, r=1.0, margin=1.0)
+sweep_config['metric'] = metric
 
-        # Perform backward pass
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+parameters_dict = {
+    'dropout': {
+        'values': [0.2, 0.1, 0]
+    },
+}
 
-        epoch_loss += loss.item()
+sweep_config['parameters'] = parameters_dict
 
-    print(f"Loss for epoch {i}:", epoch_loss)
+pprint.pprint(sweep_config)
 
-print(f'The average number of edge indices per graph is: {num_edge_indices / (args.train_num_samples * args.num_epochs)}')
+# Initialize the sweep
+sweep_id = wandb.sweep(sweep_config, project="AQA")
 
-# Start the evaluation process
-model.eval()
-accuracy_5 = 0
-accuracy_10 = 0
-accuracy_20 = 0
-mhits_5 = 0
-mhits_10 = 0
-mhits_20 = 0
-mrr = 0
+def train_and_evaluate(config=None):
+    with wandb.init(config=config):
 
-for i in tqdm(range(len(question_embeddings_test)), desc='Evaluating over each question/answer'):
-    # Get question and answers
-    question_embedding = question_embeddings_test[i]
-    answers = answers_array_test[i]
+        config = wandb.config
 
-    if args.model_name == 'amr':
-        retrieved_examples = aqa_data_test[i]['retrieved_papers']
-        answers = aqa_data_test[i]['pids']
-        data = get_data_amr(retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links)
-        # with open(f'test_amrs/{i}.pkl', 'wb') as handle:
-        #     pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        data = data.to(device)
-        y = data.y
-    elif args.model_name == 'amr+kg':
-        retrieved_examples = aqa_data_test[i]['retrieved_papers']
-        answers = aqa_data_test[i]['pids']
-        pkl_path_kg = f'data/test_kgs/{i}.pkl'
-        pkl_path_amr = f'data/test_amrs/{i}.pkl'
-        data = get_data_amg_plus_kg(pkl_path_kg, pkl_path_amr, retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links)
-        data = data.to(device)
-        y = data.y
+        # Get the reranker GNN
+        if args.gnn_type == 'gcn':
+            model = GCN(dropout=config.dropout).to(device)
+        elif args.gnn_type == 'gat':
+            model = GAT(dropout=config.dropout).to(device)
+        elif args.gnn_type == 'sage':
+            model = GraphSAGE(dropout=config.dropout).to(device)
+        else:
+            raise Exception("Invalid value for gnn_type.")
 
-    # Calculate the scores
-    outputs = model(data)
-    question_embedding = torch.tensor(question_embedding).to(device)
-    scores = torch.flatten(torch.matmul(outputs, question_embedding.t()))
+        # Get the loss function
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=5e-4)
+        # ce_loss = torch.nn.CrossEntropyLoss()
+        
+        # Start training the GNN
+        num_edge_indices = 0
+        for i in tqdm(range(args.num_epochs), desc='Training the reranker...'):
+            model.train()
+            epoch_loss = 0
 
-    # Get the labels
-    doc_indices_5 = torch.topk(scores, 5).indices
-    doc_labels_5 = y[doc_indices_5]
-    doc_indices_10 = torch.topk(scores, 10).indices
-    doc_labels_10 = y[doc_indices_10]
-    doc_indices_20 = torch.topk(scores, 20).indices
-    doc_labels_20 = y[doc_indices_20]
-    doc_indices_100 = torch.topk(scores, 100).indices
-    doc_labels_100 = y[doc_indices_100]
-    doc_labels_100 = torch.squeeze(doc_labels_100)
-    ranks = torch.arange(1, 100 + 1).to(device)
+            for batch in data_loader_train:
+                # print(batch)
+                # Get data
+                batch.x = batch.x.to(device)
+                batch.y = batch.y.to(device)
+                batch.edge_index = batch.edge_index.to(device)
+                num_edge_indices += batch.edge_index.shape[1]
 
-    # Calculate the accuracy scores
-    if torch.sum(doc_labels_5) != 0:
-        accuracy_5 += 1
-    if torch.sum(doc_labels_10) != 0:
-        accuracy_10 += 1
-    if torch.sum(doc_labels_20) != 0:
-        accuracy_20 += 1
-    
-    # Calculate the mmr scores
-    rankings = 1 / (doc_labels_100 * ranks)
-    rankings = torch.where(torch.isinf(rankings), torch.tensor(0.0), rankings)
-    safe_coe = (1 / torch.sum(doc_labels_100))
-    if torch.isinf(safe_coe):
-        safe_coe = 0
-    mrr += safe_coe * torch.sum(rankings)
+                # Get loss
+                outputs = model(batch)
+                question_embedding = torch.tensor(question_embedding).to(device)
+                scores = torch.matmul(outputs, question_embedding.t()).squeeze(-1)
+                loss = pairwise_ranking_loss(scores, batch.y, r=1.0, margin=1.0)
 
-    # Calculate the mhits scores
-    mhits_5 += safe_coe * torch.sum(doc_labels_5)
-    mhits_10 += safe_coe * torch.sum(doc_labels_10)
-    mhits_20 += safe_coe * torch.sum(doc_labels_20)
+                # Perform backward pass
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
 
-# Final score calculations...
-accuracy_5 = accuracy_5 / len(question_embeddings_test)
-accuracy_10 = accuracy_10 / len(question_embeddings_test)
-accuracy_20 = accuracy_20 / len(question_embeddings_test)
-mhits_5 = mhits_5 / len(question_embeddings_test)
-mhits_10 = mhits_10 / len(question_embeddings_test)
-mhits_20 = mhits_20 / len(question_embeddings_test)
-mrr = mrr / len(question_embeddings_test)
+                epoch_loss += loss.item()
 
-# Print out each of the scores
-print(f'The accuracy top 5 is: {accuracy_5}')
-print(f'The accuracy top 10 is: {accuracy_10}')
-print(f'The accuracy top 20 is: {accuracy_20}')
-print(f'The mhits top 5 is: {mhits_5}')
-print(f'The mhits top 10 is: {mhits_10}')
-print(f'The mhits top 20 is: {mhits_20}')
-print(f'The MRR is: {mrr}')
+            # Log training metrics
+            wandb.log({
+                'epoch': i,
+                'train_loss': epoch_loss / len(data_loader_train),
+                'dropout': config.dropout
+            })
 
-torch.save(model.state_dict(), f"{args.model_name}RerankerModel{args.num_epochs}EpochsGNN{args.gnn_type}.pth")
+        print(f'The average number of edge indices per graph is: {num_edge_indices / (args.train_num_samples * args.num_epochs)}')
+
+        # Start the evaluation process
+        model.eval()
+        accuracy_5 = 0
+        accuracy_10 = 0
+        accuracy_20 = 0
+        mhits_5 = 0
+        mhits_10 = 0
+        mhits_20 = 0
+        mrr = 0
+
+        with torch.no_grad():
+            for i in tqdm(range(len(question_embeddings_test)), desc='Evaluating over each question/answer'):
+                # Get question and answers
+                question_embedding = question_embeddings_test[i]
+                answers = answers_array_test[i]
+
+                if args.model_name == 'amr':
+                    retrieved_examples = aqa_data_test[i]['retrieved_papers']
+                    answers = aqa_data_test[i]['pids']
+                    data = get_data_amr(retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links)
+                    # with open(f'test_amrs/{i}.pkl', 'wb') as handle:
+                    #     pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                    data = data.to(device)
+                    y = data.y
+                elif args.model_name == 'amr+kg':
+                    retrieved_examples = aqa_data_test[i]['retrieved_papers']
+                    answers = aqa_data_test[i]['pids']
+                    pkl_path_kg = f'data/test_kgs/{i}.pkl'
+                    pkl_path_amr = f'data/test_amrs/{i}.pkl'
+                    data = get_data_amg_plus_kg(pkl_path_kg, pkl_path_amr, retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links)
+                    data = data.to(device)
+                    y = data.y
+
+                # Calculate the scores
+                outputs = model(data)
+                question_embedding = torch.tensor(question_embedding).to(device)
+                scores = torch.flatten(torch.matmul(outputs, question_embedding.t()))
+
+                # Get the labels
+                doc_indices_5 = torch.topk(scores, 5).indices
+                doc_labels_5 = y[doc_indices_5]
+                doc_indices_10 = torch.topk(scores, 10).indices
+                doc_labels_10 = y[doc_indices_10]
+                doc_indices_20 = torch.topk(scores, 20).indices
+                doc_labels_20 = y[doc_indices_20]
+                doc_indices_100 = torch.topk(scores, 100).indices
+                doc_labels_100 = y[doc_indices_100]
+                doc_labels_100 = torch.squeeze(doc_labels_100)
+                ranks = torch.arange(1, 100 + 1).to(device)
+
+                # Calculate the accuracy scores
+                if torch.sum(doc_labels_5) != 0:
+                    accuracy_5 += 1
+                if torch.sum(doc_labels_10) != 0:
+                    accuracy_10 += 1
+                if torch.sum(doc_labels_20) != 0:
+                    accuracy_20 += 1
+                
+                # Calculate the mmr scores
+                rankings = 1 / (doc_labels_100 * ranks)
+                rankings = torch.where(torch.isinf(rankings), torch.tensor(0.0), rankings)
+                safe_coe = (1 / torch.sum(doc_labels_100))
+                if torch.isinf(safe_coe):
+                    safe_coe = 0
+                mrr += safe_coe * torch.sum(rankings)
+
+                # Calculate the mhits scores
+                mhits_5 += safe_coe * torch.sum(doc_labels_5)
+                mhits_10 += safe_coe * torch.sum(doc_labels_10)
+                mhits_20 += safe_coe * torch.sum(doc_labels_20)
+
+                wandb.log({
+                    'accuracy_5': accuracy_5 / len(question_embeddings_test),
+                    'accuracy_10': accuracy_10 / len(question_embeddings_test),
+                    'accuracy_20': accuracy_20 / len(question_embeddings_test),
+                    'mhits_5': mhits_5 / len(question_embeddings_test),
+                    'mhits_10': mhits_10 / len(question_embeddings_test),
+                    'mhits_20': mhits_20 / len(question_embeddings_test),
+                    'mrr': mrr / len(question_embeddings_test),
+                    'dropout': config.dropout
+                })
+
+        # Final score calculations...
+        accuracy_5 = accuracy_5 / len(question_embeddings_test)
+        accuracy_10 = accuracy_10 / len(question_embeddings_test)
+        accuracy_20 = accuracy_20 / len(question_embeddings_test)
+        mhits_5 = mhits_5 / len(question_embeddings_test)
+        mhits_10 = mhits_10 / len(question_embeddings_test)
+        mhits_20 = mhits_20 / len(question_embeddings_test)
+        mrr = mrr / len(question_embeddings_test)
+
+        # Print out each of the scores
+        print(f'The accuracy top 5 is: {accuracy_5}')
+        print(f'The accuracy top 10 is: {accuracy_10}')
+        print(f'The accuracy top 20 is: {accuracy_20}')
+        print(f'The mhits top 5 is: {mhits_5}')
+        print(f'The mhits top 10 is: {mhits_10}')
+        print(f'The mhits top 20 is: {mhits_20}')
+        print(f'The MRR is: {mrr}')
+
+        # torch.save(model.state_dict(), f"{args.model_name}RerankerModel{args.num_epochs}EpochsGNN{args.gnn_type}.pth")
+
+wandb.agent(sweep_id, train_and_evaluate, count=3)
