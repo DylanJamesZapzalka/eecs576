@@ -231,3 +231,9 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
+__pycache__/
+pid_embeddings.pickle
+requirements.txt
+retrieval_results_qa_train.json
+environment.yml
+data_loader_train*

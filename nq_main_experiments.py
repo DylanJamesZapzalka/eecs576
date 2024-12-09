@@ -118,13 +118,19 @@ if args.model_name == 'kg':
 
 elif args.model_name == 'amr':
     data_list = []
-    for i in tqdm(range(0, args.train_num_samples), desc='Creating dataset'):
+    for i in tqdm(range(0, args.train_num_samples), total=args.train_num_samples, desc='Creating dataset'):
         # Get question and answers
         question_embedding = question_embeddings_train[i]
         answers = answers_array_train[i]
         # Get 100 nearest examples via DPR
-        retrieved_examples = amr_nq_data_train[i]['ctxs']
+        retrieved_examples = amr_nq_data_train[i]['ctxs'][:10]
+        # print(retrieved_examples[1])
+        # quit()
         data = get_data_amr(retrieved_examples, answers, ctx_encoder, ctx_tokenizer, args.amr_number_of_links)
+        print(data)
+        print(data.x)
+        print(data.edge_index)
+        print(data.y)
         data_list.append(data)
     data_loader_train = DataLoader(data_list, batch_size=args.batch_size)
 
@@ -140,8 +146,10 @@ elif args.model_name == 'amr+kg':
         data_list.append(data)
     data_loader_train = DataLoader(data_list, batch_size=args.batch_size)
 
-
-
+# for batch in data_loader_train:
+#     print(batch)
+# print("Quitting...")
+# quit()
 
 # Start training the GNN
 num_edge_indices = 0
