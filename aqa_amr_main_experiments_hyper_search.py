@@ -8,7 +8,6 @@ from tqdm import tqdm
 from utils import get_exact_match_score, get_data_kg, get_data_amr, get_data_kg_dpr, get_data_amg_plus_kg, pairwise_ranking_loss
 import constants
 import argparse
-import spacy
 from torch.nn import CrossEntropyLoss
 from models import GCN, GAT, GraphSAGE
 from amr_bart_utils import load_data_aqa, load_data_aqa_val
@@ -57,7 +56,7 @@ ctx_tokenizer = DPRContextEncoderTokenizer.from_pretrained("facebook/dpr-ctx_enc
 q_encoder = DPRQuestionEncoder.from_pretrained("facebook/dpr-question_encoder-multiset-base").to(device).eval()
 q_tokenizer = DPRQuestionEncoderTokenizer.from_pretrained("facebook/dpr-question_encoder-multiset-base")
 
-
+#Retreive Questions and Answers for Train and Test
 
 aqa_data_train = load_data_aqa(AQA_TRAIN_FILE_NAME, args.train_num_samples)
 questions_array_train = [example['question'] for example in aqa_data_train]
@@ -66,6 +65,8 @@ answers_array_train = [example['pids'] for example in aqa_data_train]
 aqa_data_test = load_data_aqa_val(AQA_VAL_FILE_NAME, AQA_VAL_ANS, args.test_num_samples)
 questions_array_test = [example['question'] for example in aqa_data_test]
 answers_array_test = [example['pids'] for example in aqa_data_test]
+
+#Create or load in questiom_embeddings
 
 if os.path.exists("question_embeddings_train.pickle"):
     with open('question_embeddings_train.pickle', 'rb') as handle:
@@ -97,68 +98,32 @@ else:
     with open('question_embeddings_test.pickle', 'wb') as handle:
         pickle.dump(question_embeddings_test, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-
-
-# Iniitialize the language model
-nlp = spacy.load("en_core_web_sm")
-
-# Add the spacey entity link pipeline
-nlp.add_pipe("entityLinker", last=True)
-
-# AQA_TRAIN_FILE_NAME = os.path.join(DATASETS_DIR, 'retrieval_results_qa_train.json')
-# AQA_TEST_FILE_NAME = os.path.join(DATASETS_DIR, 'retrieval_results_qa_test_wo_ans.json')
-# AQA_VAL_FILE_NAME = os.path.join(DATASETS_DIR, 'retrieval_results_qa_valid_wo_ans.json')
-# AQA_VAL_ANS = os.path.join(DATASETS_DIR, "qa_valid_flag.txt")
-
-
-# Obtain the dataset/dataloader for both train and test
-# if args.model_name == 'kg':
-#     data_list = []
-#     for i in tqdm(range(len(question_embeddings_train)), desc='Creating kg dataset'):
-#         # Get question and answers
-#         question_embedding = question_embeddings_train[i]
-#         answers = answers_array_train[i]
-#         # Get k nearest examples via DPR
-#         retrieved_examples = amr_nq_data_train[i]['ctxs']
-#         data = get_data_kg(retrieved_examples, answers, nlp, args.kg_number_of_links, args.kg_link_type, ctx_encoder, ctx_tokenizer)
-#         data_list.append(data)
-#     data_loader_train = DataLoader(data_list, batch_size=args.batch_size)
-
-# elif args.model_name == 'amr':
+#loading AMR graphs
 print("loading amr_graphs...")
 data_list = []
 with open('/scratch/chaijy_root/chaijy2/josuetf/eecs576_datasets/amr_graphs.pickle', 'rb') as handle:
     amr_data = pickle.load(handle)
 
+#loading dictionary of pid to abstract embeddings
 print("loading pid_embeddings...")
 emb_path = "/scratch/chaijy_root/chaijy2/josuetf/eecs576/pid_embeddings.pickle"
 with open(emb_path, 'rb') as file:
     embeddings_dict = pickle.load(file)
 
+#Load exiting dataset or create dataset for training and testing
 if args.model_name == 'amr' and os.path.exists("data_loader_train_amr.pth"):
     data_loader_train = torch.load("data_loader_train_amr.pth")
 elif args.model_name == 'amr+kg' and os.path.exists("data_loader_train_amr_kg.pth"):
     data_loader_train = torch.load("data_loader_train_amr_kg.pth")
 else:
     if args.model_name == 'amr':
-        count = 0
         for i in tqdm(range(0, len(question_embeddings_train)), total=args.train_num_samples, desc='Creating dataset'):
             # Get question and answers
             question_embedding = question_embeddings_train[i]
-            # answers = answers_array_train[i]
             # Get 100 nearest examples via DPR
             retrieved_examples = aqa_data_train[i]['retrieved_papers']
             answers = aqa_data_train[i]['pids']
-            # print(retrieved_examples[1])
-            # quit()
             data = get_data_amr(retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links, question_embedding)
-            if count == 0:
-                print(data)
-                print(data.x)
-                print(data.edge_index)
-                print(data.y)
-            # with open(f'train_amrs/{i}.pkl', 'wb') as handle:
-            #     pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
             data_list.append(data)
             count += 1
         data_loader_train = DataLoader(data_list, batch_size=args.batch_size)
@@ -167,12 +132,9 @@ else:
         for i in tqdm(range(len(question_embeddings_train)), desc='Creating amr+kg dataset'):
             # Get question and answers
             question_embedding = question_embeddings_train[i]
-            # answers = answers_array_train[i]
             # Get 100 nearest examples via DPR
             retrieved_examples = aqa_data_train[i]['retrieved_papers']
             answers = aqa_data_train[i]['pids']
-            # print(retrieved_examples[1])
-            # quit()
             pkl_path_kg = f'data/train_kgs/{i}.pkl'
             pkl_path_amr = f'data/train_amrs/{i}.pkl'
             data = get_data_amg_plus_kg(pkl_path_kg, pkl_path_amr, retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links, question_embedding)
@@ -180,10 +142,7 @@ else:
         data_loader_train = DataLoader(data_list, batch_size=args.batch_size)
         torch.save(data_loader_train, "data_loader_train_amr_kg.pth")
 
-# for batch in data_loader_train:
-#     print(batch)
-# print("Quitting...")
-# quit()
+#Initialize hyperparameter sweep
 
 sweep_config = {
     'method': 'grid'
@@ -209,7 +168,6 @@ sweep_config['parameters'] = parameters_dict
 
 pprint.pprint(sweep_config)
 
-# Initialize the sweep
 sweep_id = wandb.sweep(sweep_config, project="AQA")
 
 def train_and_evaluate(config=None):
@@ -238,21 +196,17 @@ def train_and_evaluate(config=None):
             epoch_loss = 0
 
             for batch in data_loader_train:
-                # print(batch)
-                 # Get data
                 batch.x = batch.x.to(device)
                 batch.y = batch.y.to(device)
                 batch.edge_index = batch.edge_index.to(device)
                 num_edge_indices += batch.edge_index.shape[1]
                 question_embedding = batch.question_embedding
-                # Get loss
                 outputs = model(batch)
                 outputs = torch.split(outputs, 100)
                 outputs = torch.stack(outputs, dim=0)
                 question_embedding = torch.tensor(question_embedding).to(device)
                 scores = torch.matmul(outputs, question_embedding.transpose(1, 2)).squeeze(-1)
-                print("scores shape:", scores.view(-1).shape)
-                print("batch shape:", batch.y.shape)
+                # Get loss
                 loss = ce_loss(scores.view(-1), batch.y.squeeze())
                 # Perform backward pass
                 optimizer.zero_grad()
@@ -289,8 +243,6 @@ def train_and_evaluate(config=None):
                     retrieved_examples = aqa_data_test[i]['retrieved_papers']
                     answers = aqa_data_test[i]['pids']
                     data = get_data_amr(retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links, question_embedding)
-                    # with open(f'test_amrs/{i}.pkl', 'wb') as handle:
-                    #     pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
                     data = data.to(device)
                     y = data.y
                 elif args.model_name == 'amr+kg':
@@ -368,7 +320,5 @@ def train_and_evaluate(config=None):
         print(f'The mhits top 10 is: {mhits_10}')
         print(f'The mhits top 20 is: {mhits_20}')
         print(f'The MRR is: {mrr}')
-
-        # torch.save(model.state_dict(), f"{args.model_name}RerankerModel{args.num_epochs}EpochsGNN{args.gnn_type}.pth")
 
 wandb.agent(sweep_id, train_and_evaluate, count=9)
