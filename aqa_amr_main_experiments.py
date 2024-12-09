@@ -1,23 +1,17 @@
-from transformers import DPRContextEncoder, DPRContextEncoderTokenizer, DPRQuestionEncoder, DPRQuestionEncoderTokenizer
-import torch
-from datasets import load_dataset
-import csv
-import numpy as np
-import ast
-from tqdm import tqdm
-from utils import get_exact_match_score, get_data_kg, get_data_amr, get_data_kg_dpr, get_data_amg_plus_kg, pairwise_ranking_loss, cross_entropy_ranking_loss
-import constants
 import argparse
+import os
+import pickle
+
 import spacy
-from torch.nn import CrossEntropyLoss
-from models import GCN, GAT, GraphSAGE
-from amr_bart_utils import load_data_aqa, load_data_aqa_val
 import torch
 from torch_geometric.loader import DataLoader
-from amr_bart_utils import load_data
-import pickle
-import os
-import wandb
+from tqdm import tqdm
+from transformers import DPRContextEncoder, DPRContextEncoderTokenizer, DPRQuestionEncoder, DPRQuestionEncoderTokenizer
+
+import constants
+from amr_bart_utils import load_data_aqa, load_data_aqa_val
+from models import GCN, GAT, GraphSAGE
+from utils import get_data_amr, get_data_amg_plus_kg
 
 # Make sure cuda is being used
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')

@@ -1,14 +1,12 @@
+import pickle
 from collections import defaultdict
 
-from fb_dpr_utils import has_answer
-from tqdm import tqdm
-from torch_geometric.data import Data
-import torch_geometric
-import torch
 import numpy as np
-import time
-import pickle
-import torch.nn.functional as F
+import torch
+from torch_geometric.data import Data
+from tqdm import tqdm
+
+from fb_dpr_utils import has_answer
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
