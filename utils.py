@@ -352,23 +352,23 @@ def get_data_amg_plus_kg(pkl_path_kg, pkl_path_amr, retrieved_examples, answers,
 
     # Get passage embeddings and node features of amr graphs
     passage_embeddings = []
-    passage_texts = []
-    nodes_list = []
-    pids = []
+    # passage_texts = []
+    # nodes_list = []
+    # pids = []
     for passage in retrieved_examples:
 
-        text = passage['text']
+        # text = passage['text']
         pid = passage['pid']
-        passage_texts.append(text)
+        # passage_texts.append(text)
         passage_embedding = embeddings_dict[pid]
         passage_embeddings.append(passage_embedding)
 
         # Get nodes and filter
-        nodes = amr_data[pid]['nodes']
-        # print(nodes)
-        filtered_nodes = [node for node in nodes if node is not None and len(node) > 3 and node != 'amr-unknown' and node != 'this' and node != 'person' and node != 'person' and node != 'name' and node != 'also' and node != 'multi-sentence']
-        nodes_list.append(filtered_nodes)
-        pids.append(pid)
+        # nodes = amr_data[pid]['nodes']
+        # # print(nodes)
+        # filtered_nodes = [node for node in nodes if node is not None and len(node) > 3 and node != 'amr-unknown' and node != 'this' and node != 'person' and node != 'person' and node != 'name' and node != 'also' and node != 'multi-sentence']
+        # nodes_list.append(filtered_nodes)
+        # pids.append(pid)
     
     passage_embeddings = np.array(passage_embeddings)
 
@@ -389,9 +389,6 @@ def get_data_amg_plus_kg(pkl_path_kg, pkl_path_amr, retrieved_examples, answers,
 
     edge_index = edge_index_kg + edge_index_amr
     edge_index = list(map(list, set(map(tuple, edge_index))))
-    print(len(edge_index))
-    print(len(edge_index[0]))
-    print(len(edge_index[1]))
     edge_index = torch.tensor(edge_index, dtype=torch.long)
 
     # Get the labels and create the Data object
@@ -522,5 +519,4 @@ def get_labels(pids, answers):
         # Get question and answers
         if pids[i] in answers:
             labels[i] = 1
-    labels = torch.unsqueeze(labels, dim=1)
     return labels

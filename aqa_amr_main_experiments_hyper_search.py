@@ -67,22 +67,35 @@ aqa_data_test = load_data_aqa_val(AQA_VAL_FILE_NAME, AQA_VAL_ANS, args.test_num_
 questions_array_test = [example['question'] for example in aqa_data_test]
 answers_array_test = [example['pids'] for example in aqa_data_test]
 
-# Get embeddings to each of the questions
-question_embeddings_train = []
-for question in tqdm(questions_array_train, desc='Embedding questions'):
-    question_tokens = q_tokenizer(question, max_length=512, truncation=True, padding='max_length', return_tensors='pt').to(device)
-    question_embedding = q_encoder(**question_tokens)
-    question_embedding = question_embedding.pooler_output
-    question_embedding = question_embedding.cpu().detach().numpy()
-    question_embeddings_train.append(question_embedding)
+if os.path.exists("question_embeddings_train.pickle"):
+    with open('question_embeddings_train.pickle', 'rb') as handle:
+        question_embeddings_train = pickle.load(handle)
+else:
+    question_embeddings_train = []
+    for question in tqdm(questions_array_train, desc='Embedding questions'):
+        question_tokens = q_tokenizer(question, max_length=512, truncation=True, padding='max_length', return_tensors='pt').to(device)
+        question_embedding = q_encoder(**question_tokens)
+        question_embedding = question_embedding.pooler_output
+        question_embedding = question_embedding.cpu().detach().numpy()
+        question_embeddings_train.append(question_embedding)
 
-question_embeddings_test = []
-for question in tqdm(questions_array_test, desc='Embedding questions'):
-    question_tokens = q_tokenizer(question, max_length=512, truncation=True, padding='max_length', return_tensors='pt').to(device)
-    question_embedding = q_encoder(**question_tokens)
-    question_embedding = question_embedding.pooler_output
-    question_embedding = question_embedding.cpu().detach().numpy()
-    question_embeddings_test.append(question_embedding)
+    with open('question_embeddings_train.pickle', 'wb') as handle:
+        pickle.dump(question_embeddings_train, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+if os.path.exists("question_embeddings_test.pickle"):
+    with open('question_embeddings_test.pickle', 'rb') as handle:
+        question_embeddings_test = pickle.load(handle)
+else:
+    question_embeddings_test = []
+    for question in tqdm(questions_array_test, desc='Embedding questions'):
+        question_tokens = q_tokenizer(question, max_length=512, truncation=True, padding='max_length', return_tensors='pt').to(device)
+        question_embedding = q_encoder(**question_tokens)
+        question_embedding = question_embedding.pooler_output
+        question_embedding = question_embedding.cpu().detach().numpy()
+        question_embeddings_test.append(question_embedding)
+
+    with open('question_embeddings_test.pickle', 'wb') as handle:
+        pickle.dump(question_embeddings_test, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 
@@ -122,8 +135,10 @@ emb_path = "/scratch/chaijy_root/chaijy2/josuetf/eecs576/pid_embeddings.pickle"
 with open(emb_path, 'rb') as file:
     embeddings_dict = pickle.load(file)
 
-if os.path.exists("data_loader_train.pth") and args.model_name == 'amr':
-    data_loader_train = torch.load("data_loader_train.pth")
+if args.model_name == 'amr' and os.path.exists("data_loader_train_amr.pth"):
+    data_loader_train = torch.load("data_loader_train_amr.pth")
+elif args.model_name == 'amr+kg' and os.path.exists("data_loader_train_amr_kg.pth"):
+    data_loader_train = torch.load("data_loader_train_amr_kg.pth")
 else:
     if args.model_name == 'amr':
         count = 0
@@ -136,7 +151,7 @@ else:
             answers = aqa_data_train[i]['pids']
             # print(retrieved_examples[1])
             # quit()
-            data = get_data_amr(retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links)
+            data = get_data_amr(retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links, question_embedding)
             if count == 0:
                 print(data)
                 print(data.x)
@@ -147,9 +162,8 @@ else:
             data_list.append(data)
             count += 1
         data_loader_train = DataLoader(data_list, batch_size=args.batch_size)
-        torch.save(data_loader_train, "data_loader_train.pth")
+        torch.save(data_loader_train, "data_loader_train_amr.pth")
     if args.model_name == 'amr+kg':
-        data_list = []
         for i in tqdm(range(len(question_embeddings_train)), desc='Creating amr+kg dataset'):
             # Get question and answers
             question_embedding = question_embeddings_train[i]
@@ -161,9 +175,10 @@ else:
             # quit()
             pkl_path_kg = f'data/train_kgs/{i}.pkl'
             pkl_path_amr = f'data/train_amrs/{i}.pkl'
-            data = get_data_amg_plus_kg(pkl_path_kg, pkl_path_amr, retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links)
+            data = get_data_amg_plus_kg(pkl_path_kg, pkl_path_amr, retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links, question_embedding)
             data_list.append(data)
         data_loader_train = DataLoader(data_list, batch_size=args.batch_size)
+        torch.save(data_loader_train, "data_loader_train_amr_kg.pth")
 
 # for batch in data_loader_train:
 #     print(batch)
@@ -175,16 +190,19 @@ sweep_config = {
 }
 
 metric = {
-    'name': 'loss',
-    'goal': 'minimize'
+    'name': 'mrr',
+    'goal': 'maximize'
 }
 
 sweep_config['metric'] = metric
 
 parameters_dict = {
-    'dropout': {
-        'values': [0.2, 0.1, 0]
+    'l2': {
+        'values': [1e-1, 1e-3, 0]
     },
+    'architecture': {
+        'values': ['gcn', 'gat', 'sage']
+    }
 }
 
 sweep_config['parameters'] = parameters_dict
@@ -200,18 +218,18 @@ def train_and_evaluate(config=None):
         config = wandb.config
 
         # Get the reranker GNN
-        if args.gnn_type == 'gcn':
-            model = GCN(dropout=config.dropout).to(device)
-        elif args.gnn_type == 'gat':
-            model = GAT(dropout=config.dropout).to(device)
-        elif args.gnn_type == 'sage':
-            model = GraphSAGE(dropout=config.dropout).to(device)
+        if config.architecture == 'gcn':
+            model = GCN().to(device)
+        elif config.architecture == 'gat':
+            model = GAT().to(device)
+        elif config.architecture == 'sage':
+            model = GraphSAGE().to(device)
         else:
             raise Exception("Invalid value for gnn_type.")
 
         # Get the loss function
-        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=5e-4)
-        # ce_loss = torch.nn.CrossEntropyLoss()
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=config.l2)
+        ce_loss = torch.nn.CrossEntropyLoss()
         
         # Start training the GNN
         num_edge_indices = 0
@@ -221,30 +239,32 @@ def train_and_evaluate(config=None):
 
             for batch in data_loader_train:
                 # print(batch)
-                # Get data
+                 # Get data
                 batch.x = batch.x.to(device)
                 batch.y = batch.y.to(device)
                 batch.edge_index = batch.edge_index.to(device)
                 num_edge_indices += batch.edge_index.shape[1]
-
+                question_embedding = batch.question_embedding
                 # Get loss
                 outputs = model(batch)
+                outputs = torch.split(outputs, 100)
+                outputs = torch.stack(outputs, dim=0)
                 question_embedding = torch.tensor(question_embedding).to(device)
-                scores = torch.matmul(outputs, question_embedding.t()).squeeze(-1)
-                loss = pairwise_ranking_loss(scores, batch.y, r=1.0, margin=1.0)
-
+                scores = torch.matmul(outputs, question_embedding.transpose(1, 2)).squeeze(-1)
+                print("scores shape:", scores.view(-1).shape)
+                print("batch shape:", batch.y.shape)
+                loss = ce_loss(scores.view(-1), batch.y.squeeze())
                 # Perform backward pass
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-
                 epoch_loss += loss.item()
 
             # Log training metrics
             wandb.log({
                 'epoch': i,
                 'train_loss': epoch_loss / len(data_loader_train),
-                'dropout': config.dropout
+                'l2': config.l2
             })
 
         print(f'The average number of edge indices per graph is: {num_edge_indices / (args.train_num_samples * args.num_epochs)}')
@@ -268,7 +288,7 @@ def train_and_evaluate(config=None):
                 if args.model_name == 'amr':
                     retrieved_examples = aqa_data_test[i]['retrieved_papers']
                     answers = aqa_data_test[i]['pids']
-                    data = get_data_amr(retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links)
+                    data = get_data_amr(retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links, question_embedding)
                     # with open(f'test_amrs/{i}.pkl', 'wb') as handle:
                     #     pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
                     data = data.to(device)
@@ -278,7 +298,7 @@ def train_and_evaluate(config=None):
                     answers = aqa_data_test[i]['pids']
                     pkl_path_kg = f'data/test_kgs/{i}.pkl'
                     pkl_path_amr = f'data/test_amrs/{i}.pkl'
-                    data = get_data_amg_plus_kg(pkl_path_kg, pkl_path_amr, retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links)
+                    data = get_data_amg_plus_kg(pkl_path_kg, pkl_path_amr, retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links, question_embedding)
                     data = data.to(device)
                     y = data.y
 
@@ -328,7 +348,7 @@ def train_and_evaluate(config=None):
                     'mhits_10': mhits_10 / len(question_embeddings_test),
                     'mhits_20': mhits_20 / len(question_embeddings_test),
                     'mrr': mrr / len(question_embeddings_test),
-                    'dropout': config.dropout
+                    'l2': config.l2
                 })
 
         # Final score calculations...
@@ -351,4 +371,4 @@ def train_and_evaluate(config=None):
 
         # torch.save(model.state_dict(), f"{args.model_name}RerankerModel{args.num_epochs}EpochsGNN{args.gnn_type}.pth")
 
-wandb.agent(sweep_id, train_and_evaluate, count=3)
+wandb.agent(sweep_id, train_and_evaluate, count=9)

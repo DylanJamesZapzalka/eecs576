@@ -211,27 +211,22 @@ for i in tqdm(range(args.num_epochs), desc='Training the reranker...'):
         batch.y = batch.y.to(device)
         batch.edge_index = batch.edge_index.to(device)
         num_edge_indices += batch.edge_index.shape[1]
-        question_embedding = batch.question_embedding
 
         # Get loss
+        # Get loss
         outputs = model(batch)
+        # Split the outputs for each graph
         outputs = torch.split(outputs, 100)
         outputs = torch.stack(outputs, dim=0)
-
-        question_embedding = torch.tensor(question_embedding).squeeze().to(device)
-        print("question embedding shape:", question_embedding)
-        print("outputs shape:", outputs)
-        scores = torch.matmul(outputs, question_embedding.t()).squeeze(-1)
-        scores = scores.sum(dim=-1)
+        # Calculate the scores for each document
+        question_embedding = batch.question_embedding.unsqueeze(1).expand(-1, 100, -1)
+        scores = torch.sum(question_embedding * outputs, dim=-1)
+        # Also split the labels for each graph
         y = torch.split(batch.y, 100)
         y = torch.stack(y, dim=0)
         y = torch.squeeze(y)
-        print("y shape:", y.shape)
-        print("scores shape:", scores.shape)
-        if args.loss_function == "pairwise":
-            loss = pairwise_ranking_loss(scores, y)
-        elif args.loss_function == "cross_entropy":
-            loss = cross_entropy_ranking_loss(scores, y)
+        # Calcualte the loss
+        loss = ce_loss(scores, y)
         # loss = pairwise_ranking_loss(scores, y, r=1.0, margin=1.0)
         # loss = cross_entropy_ranking_loss(scores, y)
         # loss = ce_loss(scores, torch.squeeze(y))
