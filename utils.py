@@ -1,22 +1,15 @@
-import json
-import os
-import pickle
-from collections import defaultdict
-
-import numpy as np
-import torch
-from torch_geometric.data import Data
-from tqdm import tqdm
-from transformers import pipeline
-
-import constants
 from fb_dpr_utils import has_answer
-
+from tqdm import tqdm
+from torch_geometric.data import Data
+import torch_geometric
+import torch
+import numpy as np
 import time
 import pickle
 import torch.nn.functional as F
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
 
 def pairwise_ranking_loss(scores, labels):
     """
@@ -63,28 +56,21 @@ def pairwise_ranking_loss(scores, labels):
     # Average the loss over all queries in the batch
     return total_loss / batch_size
 
-def cross_entropy_ranking_loss(scores, labels):
-    """
-    Compute the cross-entropy loss for a batch of queries.
+def get_data_kg_update_y(pkl_path, retrieved_examples, answers, question_embedding):
+    # Get passage embeddings and node features of amr graphs
+    passage_embeddings = []
+    passage_texts = []
+    pids = []
+    for passage in retrieved_examples:
+        pids.append(passage['pid'])
 
-    Args:
-        scores (torch.Tensor): Tensor of shape (batch_size, n), containing scores for n documents per query.
-        labels (torch.Tensor): Tensor of shape (batch_size, n), containing binary labels (0 or 1) for each document.
-
-    Returns:
-        torch.Tensor: Scalar loss value for the batch.
-    """
-    # Apply log-softmax normalization across documents for each query
-    log_probs = F.log_softmax(scores, dim=1)  # Shape: (batch_size, n)
-
-    # Compute the cross-entropy loss
-    # Multiply log_probs by labels (picking log-probs of relevant documents) and sum over documents
-    loss_per_query = -(labels * log_probs).sum(dim=1)  # Shape: (batch_size,)
-
-    # Average the loss over the batch
-    return loss_per_query.mean()
-
-def get_exact_match_score(question_embeddings, answers_array, dataset, k):
+    # Get the labels and create the Data object
+    y = get_labels_aqa(pids, answers)
+    with open(pkl_path, 'rb') as f:
+        data = pickle.load(f)
+    data.y = y
+    data.question_embedding = question_embedding
+    return data
 
 def get_exact_match_score(question_embeddings, answers_array, dataset, k):
     exact_matches = 0
@@ -128,8 +114,43 @@ def get_data_kg_dpr(retrieved_examples, answers, nlp, link_type, number_of_links
     data = Data(x=x, edge_index=edge_index.t().contiguous(), y=y, question_embedding=question_embedding)
     return data
 
-def get_data_amr(retrieved_examples, answers, embeddings_dict, amr_data, amr_number_of_links, question_embedding):
+def get_data_kg(retrieved_examples, answers, nlp, number_of_links, link_type, ctx_encoder, ctx_tokenizer,
+                question_embedding):
+    # Get passage embeddings and node features of amr graphs
+    passage_embeddings = []
+    passage_texts = []
+    for passage in retrieved_examples:
+        text = passage['text']
+        passage_texts.append(text)
+        passage_tokens = ctx_tokenizer(text, max_length=512, truncation=True, padding='max_length',
+                                       return_tensors='pt').to(device)
+        passage_embedding = ctx_encoder(**passage_tokens)
+        passage_embedding = passage_embedding.pooler_output
+        passage_embedding = passage_embedding.cpu().detach().numpy()
+        passage_embeddings.append(passage_embedding)
 
+    passage_embeddings = np.array(passage_embeddings)
+
+    # Get node feature vectors
+    x = torch.tensor(passage_embeddings)
+    x = torch.squeeze(x)
+
+    # Get the edge index
+    edge_index = None
+    if link_type == 'ssr':
+        edge_index = get_edge_index_shared_spacy_relationships(passage_texts, nlp, number_of_links)
+    elif link_type == 'se':
+        edge_index = get_edge_index_shared_entities(passage_texts, nlp, number_of_links)
+    else:
+        raise Exception('Invalid value for link_type.')
+
+    # Get the labels and create the Data object
+    y = get_labels_aqa(retrieved_examples, answers)
+    data = Data(x=x, edge_index=edge_index.t().contiguous(), y=y, question_embedding=question_embedding)
+    return data
+
+
+def get_data_amr(retrieved_examples, answers, embeddings_dict, amr_data, amr_number_of_links, question_embedding):
     # Get passage embeddings and node features of amr graphs
     passage_embeddings = []
     passage_texts = []
@@ -145,10 +166,11 @@ def get_data_amr(retrieved_examples, answers, embeddings_dict, amr_data, amr_num
         # Get nodes and filter
         nodes = amr_data[pid]['nodes']
         # print(nodes)
-        filtered_nodes = [node for node in nodes if node is not None and len(node) > 3 and node != 'amr-unknown' and node != 'this' and node != 'person' and node != 'person' and node != 'name' and node != 'also' and node != 'multi-sentence']
+        filtered_nodes = [node for node in nodes if node is not None and len(
+            node) > 3 and node != 'amr-unknown' and node != 'this' and node != 'person' and node != 'person' and node != 'name' and node != 'also' and node != 'multi-sentence']
         nodes_list.append(filtered_nodes)
         pids.append(pid)
-    
+
     passage_embeddings = np.array(passage_embeddings)
 
     # Get node feature vectors
@@ -163,60 +185,53 @@ def get_data_amr(retrieved_examples, answers, embeddings_dict, amr_data, amr_num
     data = Data(x=x, edge_index=edge_index.t().contiguous(), y=y, question_embedding=question_embedding)
     return data
 
+def get_data_amg_plus_kg(pkl_path_kg, pkl_path_amr, retrieved_examples, answers, embeddings_dict, amr_data,
+                         amr_number_of_links, question_embedding):
+    # # Get passage embeddings and node features of amr graphs
+    # passage_embeddings = []
+    # nodes_list = []
+    # passage_texts = []
+    # for passage in retrieved_examples:
 
-def get_data_kg(retrieved_examples, answers, nlp, number_of_links, link_type, ctx_encoder, ctx_tokenizer, question_embedding):
+    #     text = passage['text']
+    #     passage_texts.append(text)
+    #     passage_tokens = ctx_tokenizer(text ,max_length=512,truncation=True,padding='max_length',return_tensors='pt').to(device)
+    #     passage_embedding = ctx_encoder(**passage_tokens)
+    #     passage_embedding = passage_embedding.pooler_output
+    #     passage_embedding = passage_embedding.cpu().detach().numpy()
+    #     passage_embeddings.append(passage_embedding)
+
+    #     # Get nodes and filter
+    #     nodes = passage['nodes']
+    #     filtered_nodes = [node for node in nodes if len(node) > 3 and node != 'amr-unknown' and node != 'this' and node != 'person' and node != 'person' and node != 'name' and node != 'also' and node != 'multi-sentence']
+    #     nodes_list.append(filtered_nodes)
+
+    # passage_embeddings = np.array(passage_embeddings)
+
+    # # Get node feature vectors
+    # x = torch.tensor(passage_embeddings)
+    # x = torch.squeeze(x)
+
+    # # Get the edge index for kg
+    # edge_index_kg = None
+    # if kg_link_type == 'ssr':
+    #     edge_index_kg = get_edge_index_shared_spacy_relationships(passage_texts, nlp, kg_number_of_links, return_list=True)
+    # elif kg_link_type == 'se':
+    #     edge_index_kg = get_edge_index_shared_entities(passage_texts, nlp, kg_number_of_links, return_list=True)
+    # else:
+    #     raise Exception('Invalid value for link_type.')
+
+    # # Get the edge index for amr graph
+    # edge_index_amr = get_edge_index_amr(nodes_list, amr_number_of_links, return_list=True)
 
     # Get passage embeddings and node features of amr graphs
-    passage_embeddings = []
-    passage_texts = []
-    pids = []
-    for passage in retrieved_examples:
-        text = passage['text']
-        pid = passage['pid']
-        passage_texts.append(text)
-        passage_embedding = embeddings_dict[pid]
-        passage_embeddings.append(passage_embedding)
-        pids.append(pid)
 
-    passage_embeddings = np.array(passage_embeddings)
-
-    # Get node feature vectors
-    x = torch.tensor(passage_embeddings, dtype=torch.float32)
-    x = torch.squeeze(x)
-
-    # Get the edge index
-    edge_index = get_edge_index_shared_entities_kg(retrieved_examples, subgraphs)
-
-    # Get the labels and create the Data object
-    y = get_labels(retrieved_examples, answers)
-    data = Data(x=x, edge_index=edge_index.t().contiguous(), y=y, question_embedding=question_embedding)
-    return data
-
-def get_data_kg_update_y(pkl_path, retrieved_examples, answers):
-    # Get passage embeddings and node features of amr graphs
-    passage_embeddings = []
-    passage_texts = []
-    pids = []
-    for passage in retrieved_examples:
-        pids.append(passage['pid'])
-
-    # Get the labels and create the Data object
-    y = get_labels_aqa(pids, answers)
-    with open(pkl_path, 'rb') as f:
-        data = pickle.load(f)
-    data.y = y
-    return data
-
-
-def get_data_amg_plus_kg(retrieved_examples, answers, nlp, kg_number_of_links, kg_link_type, amr_number_of_links,
-                         ctx_encoder, ctx_tokenizer):
     # Get passage embeddings and node features of amr graphs
     passage_embeddings = []
     # passage_texts = []
     # nodes_list = []
     # pids = []
     for passage in retrieved_examples:
-
         # text = passage['text']
         pid = passage['pid']
         # passage_texts.append(text)
@@ -229,7 +244,7 @@ def get_data_amg_plus_kg(retrieved_examples, answers, nlp, kg_number_of_links, k
         # filtered_nodes = [node for node in nodes if node is not None and len(node) > 3 and node != 'amr-unknown' and node != 'this' and node != 'person' and node != 'person' and node != 'name' and node != 'also' and node != 'multi-sentence']
         # nodes_list.append(filtered_nodes)
         # pids.append(pid)
-    
+
     passage_embeddings = np.array(passage_embeddings)
 
     # Get node feature vectors
@@ -385,11 +400,20 @@ def get_labels_dpr(retrieved_examples, answers):
     labels = torch.unsqueeze(labels, dim=1)
     return labels
 
+def get_labels_aqa(pids, answers):
+    labels = torch.zeros(len(pids), dtype=torch.float)
+
+    # Check each of the nearest passages for an exact match
+    for i in range(len(pids)):
+        # Get question and answers
+        if pids[i] in answers:
+            labels[i] = 1
+    return labels
+
 
 def get_labels(pids, answers):
-
     labels = torch.zeros(len(pids), dtype=torch.float)
-  
+
     # Check each of the nearest passages for an exact match
     for i in range(len(pids)):
         # Get question and answers
