@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 from fb_dpr_utils import has_answer
 from tqdm import tqdm
 from torch_geometric.data import Data
