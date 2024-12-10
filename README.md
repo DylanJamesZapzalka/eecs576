@@ -52,8 +52,10 @@ The pre-generated AMR graphs are in the drive:
 - retrieval_results_qa_test_wo_ans.json
 - retrieval_results_qa_valid_wo_ans.json
 - qa_valid_flag.txt
+
 The NQ dataset can be found here:
 - https://dl.fbaipublicfiles.com/dpr/data/retriever/nq-test.qa.csv
+
 Then, run /nq_pickler pickle_data.py followed by /nq_pickler/re_pickle.py
 
 As an example, to run the experiments with the GNN, run
