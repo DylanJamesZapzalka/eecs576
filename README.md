@@ -48,12 +48,12 @@ To run the exact experiments used to generate the NQ experiments used in the rep
 To run the NQ experiments, simply download the pickled data as described above.
 Or, if you for some reason want to pickle the data yourself, download the following files, and set the appropriate constansts in constants.py
 The pre-generated AMR graphs are in the drive:
---retrieval_results_qa_train.json
---retrieval_results_qa_test_wo_ans.json
---retrieval_results_qa_valid_wo_ans.json
---qa_valid_flag.txt
+- retrieval_results_qa_train.json
+- retrieval_results_qa_test_wo_ans.json
+- retrieval_results_qa_valid_wo_ans.json
+- qa_valid_flag.txt
 The NQ dataset can be found here:
--- https://dl.fbaipublicfiles.com/dpr/data/retriever/nq-test.qa.csv
+- https://dl.fbaipublicfiles.com/dpr/data/retriever/nq-test.qa.csv
 Then, run /nq_pickler pickle_data.py followed by /nq_pickler/re_pickle.py
 
 As an example, to run the experiments with the GNN, run
