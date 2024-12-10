@@ -5,12 +5,12 @@ This repo contains the experiments ran for our project. It investigates methods 
 Pregenerated graphs and datasets can be downloaded here.
 https://drive.google.com/drive/folders/12oD41P7yVl23RkG0o0rb1IC4FgHILuVe
 Place all files in the root folder.
-## How to run experiments
-Directly run the scripts located in the scripts directory or run these commands:
 ### Generate AMR graphs
 ```bash
 python faster_custom_prediction.py --output-dir /scratch/chaijy_root/chaijy2/josuetf/chunked_amr_results --chunk-id 0 --total-chunks 4 --num-workers 4 --batch-size 128
 ```
+## How to run experiments
+Directly run the scripts located in the scripts directory or run these commands:
 
 ### NQ Experiments
 ```bash
