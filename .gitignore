@@ -233,7 +233,6 @@ cython_debug/
 
 __pycache__/
 pid_embeddings.pickle
-requirements.txt
 retrieval_results_qa_train.json
 environment.yml
 data_loader_train*
