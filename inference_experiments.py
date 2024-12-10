@@ -7,7 +7,7 @@ from amr_bart_utils import get_rerank_examples_odqa_amr, load_data
 
 # Make sure this is a read token, otherwise you will get an error
 # Also, make sure you delete your token before pushing any changes to the github repo
-# login(token="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")
+# login(token="")
 
 # model_id = "meta-llama/Llama-3.2-1B"
 
