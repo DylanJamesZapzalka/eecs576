@@ -1,0 +1,7 @@
+datasets==3.1.0
+faiss-cpu==1.9.0
+ipykernel==6.29.5
+omegaconf==2.3.0
+torch==2.5.1
+tqdm==4.67.1
+transformers==4.47.0
