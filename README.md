@@ -46,8 +46,8 @@ Directly run the scripts located in the scripts directory or run these commands:
 To run the exact experiments used to generate the NQ experiments used in the report, simply run /scripts/run_nq_experiments.sh
 
 To run the NQ experiments, simply download the pickled data as described above.
-Or, if you for some reason what to pickle the data yourself, download the following files, and set the appropriate constansts in constants.py
-The pregenerated AMR graphs are in the drive:
+Or, if you for some reason want to pickle the data yourself, download the following files, and set the appropriate constansts in constants.py
+The pre-generated AMR graphs are in the drive:
 --retrieval_results_qa_train.json
 --retrieval_results_qa_test_wo_ans.json
 --retrieval_results_qa_valid_wo_ans.json
