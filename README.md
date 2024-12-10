@@ -4,6 +4,7 @@ This repo contains the experiments ran for our project. It investigates methods 
 ## Downloading artifacts
 Pregenerated graphs and datasets can be downloaded here.
 https://drive.google.com/drive/folders/12oD41P7yVl23RkG0o0rb1IC4FgHILuVe
+Placing all files in the root folder.
 ## How to run experiments
 Directly run the scripts located in the scripts directory or run these commands:
 ### Generate AMR graphs
