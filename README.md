@@ -2,7 +2,7 @@
 ## About
 This repo contains the experiments ran for our project. It investigates methods to retrieve and rank articles for answering academic questions by using Abstract Meaning Representation (AMR) graphs and Knowledge Graphs (KG). The study compares the effectiveness of different graph types (AMR, KG, and AMR+KG) and Graph Neural Network (GNN) architectures (GAT, GCN, and GraphSAGE) on the Academic Question Answering (AQA) and Natural Questions (NQ) datasets. The results show that GraphSAGE performs best across all graph types due to high heterophily, and combining AMR and KG graphs can lead to more robust reranking schemes. These findings offer insights into the interaction between graph representations and GNN architectures in passage reranking tasks for academic question answering.
 ## How to run experiments
-Directly run the scripts or run these commands:
+Directly run the scripts located in the scripts directory or run these commands:
 ### NQ Experiments
 ```bash
 python nq_main_experiments.py --model_name amr  --train_num_samples 5000 --test_num_samples 1000 --gnn_type gat --amr_number_of_links 20 --num_epochs 100 
