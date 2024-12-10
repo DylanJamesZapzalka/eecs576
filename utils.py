@@ -10,52 +10,6 @@ from fb_dpr_utils import has_answer
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-
-def pairwise_ranking_loss(scores, labels):
-    """
-    Compute the pairwise ranking loss for a batch of queries.
-
-    Args:
-        scores (torch.Tensor): Tensor of shape (batch_size, n), containing scores for n documents per query.
-        labels (torch.Tensor): Tensor of shape (batch_size, n), containing binary labels (0 or 1) for each document.
-
-    Returns:
-        torch.Tensor: Scalar loss value for the batch.
-    """
-    batch_size, n = scores.size()  # Number of queries and documents per query
-    total_loss = 0.0  # Accumulate loss over all queries
-
-    # Iterate over the batch
-    for b in range(batch_size):
-        # Get scores and labels for the current query
-        scores_b = scores[b]  # Shape: (n,)
-        labels_b = labels[b]  # Shape: (n,)
-
-        # Identify positive and negative indices
-        positive_indices = (labels_b == 1).nonzero(as_tuple=True)[0]  # Indices of positive samples
-        negative_indices = (labels_b == 0).nonzero(as_tuple=True)[0]  # Indices of negative samples
-
-        if len(positive_indices) == 0 or len(negative_indices) == 0:
-            # Skip if no positive or negative samples
-            continue
-
-        # Get scores for positive and negative samples
-        s_pos = scores_b[positive_indices]  # Shape: (num_positive,)
-        s_neg = scores_b[negative_indices]  # Shape: (num_negative,)
-
-        # Compute pairwise differences: s_i - s_j for all positive-negative pairs
-        pairwise_differences = s_pos.unsqueeze(1) - s_neg.unsqueeze(0)  # Shape: (num_positive, num_negative)
-
-        # Compute the hinge loss with the +1 margin term
-        loss_matrix = torch.clamp(-1 * pairwise_differences + 1, min=0)  # Shape: (num_positive, num_negative)
-
-        # Average loss for the current query
-        query_loss = loss_matrix.mean()
-        total_loss += query_loss
-
-    # Average the loss over all queries in the batch
-    return total_loss / batch_size
-
 def get_data_kg_update_y(pkl_path, retrieved_examples, answers, question_embedding):
     # Get passage embeddings and node features of amr graphs
     passage_embeddings = []

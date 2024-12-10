@@ -34,13 +34,10 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--model_name", required=True, type=str, help='Model used in the experiments. Can be "kg", "amr" or "amr+kg"')
 parser.add_argument("--train_num_samples", required=True, type=int, help='Number of samples used to train the model.')
 parser.add_argument("--test_num_samples", required=True, type=int, help='Number of samples used to test the model.')
-parser.add_argument("--kg_link_type", type=str, help='Method that will be used to creat the graph. Can be "ssr" or "se".')
-parser.add_argument("--kg_number_of_links", type=int, help='Number of connections needed to create an edge for the reranking graph.')
 parser.add_argument("--amr_number_of_links", type=int, help='Number of connections needed to create an edge for the reranking graph.')
 parser.add_argument("--gnn_type", required=True, type=str, help='Type of GNN for the reranker. Can be "gcn", "gat", or "sage".')
 parser.add_argument("--num_epochs", required=True, type=int, help='Number of epochs the GNN model will be trained over.')
 parser.add_argument("--batch_size", default=8, type=int, help='Batch size for training the gnn.')
-parser.add_argument("--loss_function", default=8, type=str, help='Loss functino used for training.')
 args = parser.parse_args()
 
 
@@ -113,25 +110,6 @@ else:
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=5e-4)
 ce_loss = torch.nn.CrossEntropyLoss()
 
-# AQA_TRAIN_FILE_NAME = os.path.join(DATASETS_DIR, 'retrieval_results_qa_train.json')
-# AQA_TEST_FILE_NAME = os.path.join(DATASETS_DIR, 'retrieval_results_qa_test_wo_ans.json')
-# AQA_VAL_FILE_NAME = os.path.join(DATASETS_DIR, 'retrieval_results_qa_valid_wo_ans.json')
-# AQA_VAL_ANS = os.path.join(DATASETS_DIR, "qa_valid_flag.txt")
-
-
-# Obtain the dataset/dataloader for both train and test
-# if args.model_name == 'kg':
-#     data_list = []
-#     for i in tqdm(range(len(question_embeddings_train)), desc='Creating kg dataset'):
-#         # Get question and answers
-#         question_embedding = question_embeddings_train[i]
-#         answers = answers_array_train[i]
-#         # Get k nearest examples via DPR
-#         retrieved_examples = amr_nq_data_train[i]['ctxs']
-#         data = get_data_kg(retrieved_examples, answers, nlp, args.kg_number_of_links, args.kg_link_type, ctx_encoder, ctx_tokenizer)
-#         data_list.append(data)
-#     data_loader_train = DataLoader(data_list, batch_size=args.batch_size)
-
 # elif args.model_name == 'amr':
 print("loading amr_graphs...")
 data_list = []
@@ -149,26 +127,14 @@ elif args.model_name == 'amr+kg' and os.path.exists("data_loader_train_amr_kg.pt
     data_loader_train = torch.load("data_loader_train_amr_kg.pth")
 else:
     if args.model_name == 'amr':
-        count = 0
         for i in tqdm(range(0, len(question_embeddings_train)), total=args.train_num_samples, desc='Creating dataset'):
             # Get question and answers
             question_embedding = question_embeddings_train[i]
-            # answers = answers_array_train[i]
             # Get 100 nearest examples via DPR
             retrieved_examples = aqa_data_train[i]['retrieved_papers']
             answers = aqa_data_train[i]['pids']
-            # print(retrieved_examples[1])
-            # quit()
             data = get_data_amr(retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links, question_embedding)
-            if count == 0:
-                print(data)
-                print(data.x)
-                print(data.edge_index)
-                print(data.y)
-            # with open(f'train_amrs/{i}.pkl', 'wb') as handle:
-            #     pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
             data_list.append(data)
-            count += 1
         data_loader_train = DataLoader(data_list, batch_size=args.batch_size)
         torch.save(data_loader_train, "data_loader_train_amr.pth")
     if args.model_name == 'amr+kg':
@@ -176,22 +142,15 @@ else:
         for i in tqdm(range(len(question_embeddings_train)), desc='Creating amr+kg dataset'):
             # Get question and answers
             question_embedding = question_embeddings_train[i]
-            # answers = answers_array_train[i]
             # Get 100 nearest examples via DPR
             retrieved_examples = aqa_data_train[i]['retrieved_papers']
             answers = aqa_data_train[i]['pids']
-            # print(retrieved_examples[1])
-            # quit()
             pkl_path_kg = f'data/train_kgs/{i}.pkl'
             pkl_path_amr = f'data/train_amrs/{i}.pkl'
             data = get_data_amg_plus_kg(pkl_path_kg, pkl_path_amr, retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links, question_embedding)
             data_list.append(data)
         data_loader_train = DataLoader(data_list, batch_size=args.batch_size)
         torch.save(data_loader_train, "data_loader_train_amr_kg.pth")
-# for batch in data_loader_train:
-#     print(batch)
-# print("Quitting...")
-# quit()
 
 # Start training the GNN
 num_edge_indices = 0
@@ -207,7 +166,6 @@ for i in tqdm(range(args.num_epochs), desc='Training the reranker...'):
         num_edge_indices += batch.edge_index.shape[1]
 
         # Get loss
-        # Get loss
         outputs = model(batch)
         # Split the outputs for each graph
         outputs = torch.split(outputs, 100)
@@ -221,9 +179,6 @@ for i in tqdm(range(args.num_epochs), desc='Training the reranker...'):
         y = torch.squeeze(y)
         # Calcualte the loss
         loss = ce_loss(scores, y)
-        # loss = pairwise_ranking_loss(scores, y, r=1.0, margin=1.0)
-        # loss = cross_entropy_ranking_loss(scores, y)
-        # loss = ce_loss(scores, torch.squeeze(y))
         # Perform backward pass
         optimizer.zero_grad()
         loss.backward()
@@ -254,8 +209,6 @@ for i in tqdm(range(len(question_embeddings_test)), desc='Evaluating over each q
         retrieved_examples = aqa_data_test[i]['retrieved_papers']
         answers = aqa_data_test[i]['pids']
         data = get_data_amr(retrieved_examples, answers, embeddings_dict, amr_data, args.amr_number_of_links, question_embedding)
-        # with open(f'test_amrs/{i}.pkl', 'wb') as handle:
-        #     pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
         data = data.to(device)
         y = data.y
     elif args.model_name == 'amr+kg':
