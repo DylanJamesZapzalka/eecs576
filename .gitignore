@@ -238,8 +238,6 @@ retrieval_results_qa_train.json
 environment.yml
 data_loader_train*
 
-*.sh
-
 gat_cross_entropy_amr_kg_output.txt
 gat_pairwise_amr_kg_output.txt
 gcn_pairwise_amr_kg_output.txt
