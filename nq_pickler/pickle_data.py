@@ -42,7 +42,13 @@ parser.add_argument("--num_epochs", required=True, type=int, help='Number of epo
 parser.add_argument("--batch_size", default=8, type=int, help='Batch size for training the gnn.')
 args = parser.parse_args()
 
+amr_nq_data_train = load_data(AMR_NQ_TRAIN_FILE_NAME, args.train_num_samples)
+questions_array_train = [example['question'] for example in amr_nq_data_train]
+answers_array_train = [example['answers'] for example in amr_nq_data_train]
 
+amr_nq_data_test = load_data(AMR_NQ_TEST_FILE_NAME, args.test_num_samples)
+questions_array_test = [example['question'] for example in amr_nq_data_test]
+answers_array_test = [example['answers'] for example in amr_nq_data_test]
 
 
 # Check if the file exists

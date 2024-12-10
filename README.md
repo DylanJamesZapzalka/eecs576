@@ -43,19 +43,39 @@ python faster_custom_prediction.py --output-dir /scratch/chaijy_root/chaijy2/jos
 Directly run the scripts located in the scripts directory or run these commands:
 
 ### NQ Experiments
+To run the exact experiments used to generate the NQ experiments used in the report, simply run /scripts/run_nq_experiments.sh
+
+To run the NQ experiments, simply download the pickled data as described above.
+Or, if you for some reason what to pickle the data yourself, download the following files, and set the appropriate constansts in constants.py
+The pregenerated AMR graphs are in the drive:
+--retrieval_results_qa_train.json
+--retrieval_results_qa_test_wo_ans.json
+--retrieval_results_qa_valid_wo_ans.json
+--qa_valid_flag.txt
+The NQ dataset can be found here:
+-- https://dl.fbaipublicfiles.com/dpr/data/retriever/nq-test.qa.csv
+Then, run /nq_pickler pickle_data.py followed by /nq_pickler/re_pickle.py
+
+As an example, to run the experiments with the GNN, run
 
 ```bash
-python nq_main_experiments.py --model_name amr  --train_num_samples 5000 --test_num_samples 1000 --gnn_type gat --amr_number_of_links 20 --num_epochs 100 
-python nq_main_experiments.py --model_name kg  --train_num_samples 5000 --test_num_samples 1000 --gnn_type gat --kg_link_type ssr --kg_number_of_links 3 --num_epochs 100
-python nq_main_experiments.py --model_name kg  --train_num_samples 5000 --test_num_samples 1000 --gnn_type gat --kg_link_type se --kg_number_of_links 7 --num_epochs 100 
-python nq_main_experiments.py --model_name amr+kg  --train_num_samples 5000 --test_num_samples 1000 --gnn_type gat --kg_link_type ssr --kg_number_of_links 3 --amr_number_of_links 20 --num_epochs 100
-python nq_main_experiments.py --model_name amr+kg  --train_num_samples 5000 --test_num_samples 1000 --gnn_type gat --kg_link_type se --kg_number_of_links 7 --amr_number_of_links 20 --num_epochs 100
+python nq_main_experiments.py --model_name amr  --train_num_samples 1000 --test_num_samples 500 --gnn_type gcn --num_epochs 20 --weight_decay 1e-3 --num_sims 5
+python nq_main_experiments.py --model_name kg  --train_num_samples 1000 --test_num_samples 500 --gnn_type gcn --num_epochs 20 --weight_decay 1e-1 --num_sims 5
+python nq_main_experiments.py --model_name amr+kg  --train_num_samples 1000 --test_num_samples 500 --gnn_type gcn --num_epochs 20 --weight_decay 1e-1 --num_sims 5
 
-python nq_main_experiments.py --model_name amr  --train_num_samples 5000 --test_num_samples 1000 --gnn_type gat --amr_number_of_links 20 --num_epochs 300 
-python nq_main_experiments.py --model_name kg  --train_num_samples 5000 --test_num_samples 1000 --gnn_type gat --kg_link_type ssr --kg_number_of_links 3 --num_epochs 300 
-python nq_main_experiments.py --model_name kg  --train_num_samples 5000 --test_num_samples 1000 --gnn_type gat --kg_link_type se --kg_number_of_links 7 --num_epochs 300 
-python nq_main_experiments.py --model_name amr+kg  --train_num_samples 5000 --test_num_samples 1000 --gnn_type gat --kg_link_type ssr --kg_number_of_links 3 --amr_number_of_links 20 --num_epochs 300
-python nq_main_experiments.py --model_name amr+kg  --train_num_samples 5000 --test_num_samples 1000 --gnn_type gat --kg_link_type se --kg_number_of_links 7 --amr_number_of_links 20 --num_epochs 300
+python nq_main_experiments.py --model_name amr  --train_num_samples 1000 --test_num_samples 500 --gnn_type gat --num_epochs 20 --weight_decay 1e-3 --num_sims 5
+python nq_main_experiments.py --model_name kg  --train_num_samples 1000 --test_num_samples 500 --gnn_type gat  --num_epochs 20 --weight_decay 0 --num_sims 5
+python nq_main_experiments.py --model_name amr+kg  --train_num_samples 1000 --test_num_samples 500 --gnn_type gat --num_epochs 20 --weight_decay 1e-3 --num_sims 5
+
+python nq_main_experiments.py --model_name amr  --train_num_samples 1000 --test_num_samples 500 --gnn_type sage  --num_epochs 20 --weight_decay 0 --num_sims 5
+python nq_main_experiments.py --model_name kg  --train_num_samples 1000 --test_num_samples 500 --gnn_type sage --num_epochs 20 --weight_decay 1e-3 --num_sims 5
+python nq_main_experiments.py --model_name amr+kg  --train_num_samples 1000 --test_num_samples 500 --gnn_type sage --num_epochs 20 --weight_decay 1e-3 --num_sims 5
+```
+
+To run the DPR experiment, run
+
+```bash
+python nq_dpr_experiments.py  --train_num_samples 3000 --test_num_samples 500
 ```
 
 ### AQA KG experiments
