@@ -59,17 +59,17 @@ Then, run /nq_pickler pickle_data.py followed by /nq_pickler/re_pickle.py
 As an example, to run the experiments with the GNN, run
 
 ```bash
-python nq_main_experiments.py --model_name amr  --train_num_samples 1000 --test_num_samples 500 --gnn_type gcn --num_epochs 20 --weight_decay 1e-3 --num_sims 5
-python nq_main_experiments.py --model_name kg  --train_num_samples 1000 --test_num_samples 500 --gnn_type gcn --num_epochs 20 --weight_decay 1e-1 --num_sims 5
-python nq_main_experiments.py --model_name amr+kg  --train_num_samples 1000 --test_num_samples 500 --gnn_type gcn --num_epochs 20 --weight_decay 1e-1 --num_sims 5
+python nq_main_experiments.py --model_name amr  --train_num_samples 2500 --test_num_samples 500 --gnn_type gcn --num_epochs 20 --weight_decay 1e-3 --num_sims 5
+python nq_main_experiments.py --model_name kg  --train_num_samples 2500 --test_num_samples 500 --gnn_type gcn --num_epochs 20 --weight_decay 1e-1 --num_sims 5
+python nq_main_experiments.py --model_name amr+kg  --train_num_samples 2500 --test_num_samples 500 --gnn_type gcn --num_epochs 20 --weight_decay 1e-1 --num_sims 5
 
-python nq_main_experiments.py --model_name amr  --train_num_samples 1000 --test_num_samples 500 --gnn_type gat --num_epochs 20 --weight_decay 1e-3 --num_sims 5
-python nq_main_experiments.py --model_name kg  --train_num_samples 1000 --test_num_samples 500 --gnn_type gat  --num_epochs 20 --weight_decay 0 --num_sims 5
-python nq_main_experiments.py --model_name amr+kg  --train_num_samples 1000 --test_num_samples 500 --gnn_type gat --num_epochs 20 --weight_decay 1e-3 --num_sims 5
+python nq_main_experiments.py --model_name amr  --train_num_samples 2500 --test_num_samples 500 --gnn_type gat --num_epochs 20 --weight_decay 1e-3 --num_sims 5
+python nq_main_experiments.py --model_name kg  --train_num_samples 2500 --test_num_samples 500 --gnn_type gat  --num_epochs 20 --weight_decay 0 --num_sims 5
+python nq_main_experiments.py --model_name amr+kg  --train_num_samples 2500 --test_num_samples 500 --gnn_type gat --num_epochs 20 --weight_decay 1e-3 --num_sims 5
 
-python nq_main_experiments.py --model_name amr  --train_num_samples 1000 --test_num_samples 500 --gnn_type sage  --num_epochs 20 --weight_decay 0 --num_sims 5
-python nq_main_experiments.py --model_name kg  --train_num_samples 1000 --test_num_samples 500 --gnn_type sage --num_epochs 20 --weight_decay 1e-3 --num_sims 5
-python nq_main_experiments.py --model_name amr+kg  --train_num_samples 1000 --test_num_samples 500 --gnn_type sage --num_epochs 20 --weight_decay 1e-3 --num_sims 5
+python nq_main_experiments.py --model_name amr  --train_num_samples 2500 --test_num_samples 500 --gnn_type sage  --num_epochs 20 --weight_decay 0 --num_sims 5
+python nq_main_experiments.py --model_name kg  --train_num_samples 2500 --test_num_samples 500 --gnn_type sage --num_epochs 20 --weight_decay 1e-3 --num_sims 5
+python nq_main_experiments.py --model_name amr+kg  --train_num_samples 2500 --test_num_samples 500 --gnn_type sage --num_epochs 20 --weight_decay 1e-3 --num_sims 5
 ```
 
 To run the DPR experiment, run
